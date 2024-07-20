@@ -7,7 +7,8 @@ const axios = require("axios");
 const { error } = require("console");
 const sharp = require("sharp");
 const { removeImageBackground } = require("./utils/backgroundRemover");
-
+const natural = require("natural");
+const tokenizer = new natural.SentenceTokenizer();
 const bot = new Tgfancy(process.env.TELEGRAM_BOT_TOKEN, {
 	polling: true,
 });
@@ -97,6 +98,8 @@ function handleMessages({ chatId, msg, text, sender }) {
 					console.error(err);
 				});
 			break;
+		case "/removebg":
+		case "/rmbg":
 		case "/removebackground":
 			if (msg.reply_to_message && msg.reply_to_message.photo) {
 				const chatId = msg.chat.id;
@@ -116,8 +119,50 @@ function handleMessages({ chatId, msg, text, sender }) {
 					};
 					await bot.sendPhoto(chatId, result, fileOpts);
 				});
+			} else {
+				handleResponse("This command should be a response to a message that has an image, you donkey.", msg, chatId, myCache, bot, "pre").catch((err) => {
+					console.error(err);
+				});
 			}
+			break;
+		case "/tldr":
+			let webpageURL = extractUrl(msg.text) || extractUrl(msg.reply_to_message?.text);
+			import("@extractus/article-extractor").then(async ({ extract }) => {
+				const article = await extract(webpageURL);
+				const summary = summarizeText(article.content.replace(/<[^>]*>/g, ""));
+				handleResponse(summary, msg, chatId, myCache, bot, "i").catch((err) => {
+					console.error(err);
+				});
+			});
+			break;
 	}
+}
+
+function extractUrl(text) {
+	const urlRegex = /(\bhttps?:\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/gi;
+	const urls = text.match(urlRegex);
+	return urls ? urls[0] : null;
+}
+
+function summarizeText(text, maxSentences = 2) {
+	const sentences = tokenizer.tokenize(text);
+	const TfIdf = natural.TfIdf;
+	const tfidf = new TfIdf();
+	sentences.forEach((sentence) => {
+		tfidf.addDocument(sentence);
+	});
+	const sentenceImportance = sentences.map((sentence, index) => {
+		return {
+			sentence,
+			importance: tfidf.tfidf(sentence, index),
+		};
+	});
+
+	sentenceImportance.sort((a, b) => b.importance - a.importance);
+	return sentenceImportance
+		.slice(0, maxSentences)
+		.map((item) => item.sentence)
+		.join(" ");
 }
 
 function handleResponse(text, msg, chatId, myCache, bot, containerFormat) {

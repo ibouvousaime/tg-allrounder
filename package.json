@@ -1,23 +1,24 @@
 {
-  "name": "tg-allrounder",
-  "version": "1.0.0",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "author": "ibouvousaime",
-  "license": "ISC",
-  "description": "",
-  "devDependencies": {
-    "prettier": "3.3.3"
-  },
-  "dependencies": {
-    "@imgly/background-removal-node": "^1.4.5",
-    "axios": "^1.7.2",
-    "dotenv": "^16.4.5",
-    "node-cache": "^5.1.2",
-    "sharp": "^0.33.4",
-    "tgfancy": "^0.13.0",
-    "weather-js": "^2.0.0"
-  }
+	"name": "tg-allrounder",
+	"version": "1.0.0",
+	"main": "index.js",
+	"scripts": {
+		"test": "echo \"Error: no test specified\" && exit 1"
+	},
+	"author": "ibouvousaime",
+	"license": "ISC",
+	"description": "",
+	"devDependencies": {
+		"prettier": "3.3.3"
+	},
+	"dependencies": {
+		"@extractus/article-extractor": "^8.0.10",
+		"axios": "^1.7.2",
+		"dotenv": "^16.4.5",
+		"natural": "^7.1.0",
+		"node-cache": "^5.1.2",
+		"sharp": "^0.33.4",
+		"tgfancy": "^0.13.0",
+		"weather-js": "^2.0.0"
+	}
 }
