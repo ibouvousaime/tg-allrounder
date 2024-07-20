@@ -3,6 +3,9 @@ require("dotenv").config();
 const { exec } = require("child_process");
 const NodeCache = require("node-cache");
 var weather = require("weather-js");
+const axios = require("axios");
+const { error } = require("console");
+const sharp = require("sharp");
 
 const bot = new Tgfancy(process.env.TELEGRAM_BOT_TOKEN, {
 	polling: true,
@@ -17,16 +20,30 @@ bot.on("edited_message", async (msg) => {
 bot.on("text", async (msg) => {
 	const chatId = msg.chat.id;
 	const text = msg.text;
-	handleMessages({ chatId, text, msg });
+	const sender = msg.from;
+	handleMessages({ chatId, text, msg, sender });
 });
 
-function handleMessages({ chatId, msg, text }) {
-	switch (text.split(" ")[0]) {
+function handleMessages({ chatId, msg, text, sender }) {
+	switch (text.split(" ")[0].split("@")[0]) {
 		case "/start":
 			bot.sendMessage(chatId, "hi");
 			break;
 		case "/help":
 			bot.sendMessage(chatId, "Commands:\n/trans to translate text\n/weather to get the weather");
+			break;
+		case "/unsplash":
+			const replyToMessage = msg.reply_to_message;
+			if (replyToMessage) {
+				console.log(replyToMessage);
+				generateUnsplashImage(replyToMessage.text, replyToMessage.from)
+					.then((buffer) => {
+						bot.sendPhoto(chatId, buffer);
+					})
+					.catch((err) => {
+						console.error(error);
+					});
+			}
 			break;
 		case "/delete":
 			const deleteMsg = async () => {
@@ -65,8 +82,6 @@ function handleMessages({ chatId, msg, text }) {
 					console.error(err);
 				});
 			break;
-		default:
-			bot.sendMessage(chatId, "Sorry, I didn't understand that command.");
 	}
 }
 
@@ -164,4 +179,99 @@ function getFormattedWeatherData(item) {
 		}
 	});
 	return resultLines.join("\n");
+}
+
+async function fetchImage(url) {
+	try {
+		const response = await axios({
+			method: "get",
+			url: url,
+			responseType: "arraybuffer",
+		});
+		return response.data;
+	} catch (error) {
+		console.error("Error fetching image:", error.message);
+		return null;
+	}
+}
+function getSenderInfo(sender) {
+	return `${sender.first_name} ${sender.last_name ? sender.last_name : ""} (@${sender.username})`;
+}
+
+function wrapText(text, maxWidth, fontSize) {
+	const words = text.split(" ");
+	const lines = [];
+	let currentLine = words[0];
+
+	for (let i = 1; i < words.length; i++) {
+		const word = words[i];
+		const width = currentLine.length + word.length + 1;
+		if (width > maxWidth) {
+			lines.push(currentLine);
+			currentLine = word;
+		} else {
+			currentLine += " " + word;
+		}
+	}
+	lines.push(currentLine);
+
+	return lines;
+}
+
+const darkNatureSearchTerms = [
+	"forest+moonlight",
+	"mountain+night",
+	"river+twilight",
+	"desert+starry sky",
+	"ocean+moon",
+	"lake+night",
+	"snow+night",
+	"cave+dark",
+	"volcano+night",
+	"jungle+night",
+];
+function generateUnsplashImage(text, sender) {
+	return new Promise(async (resolve, reject) => {
+		try {
+			chosenSearchTerm = darkNatureSearchTerms[Math.floor(Math.random() * darkNatureSearchTerms.length)];
+			const API_URL = `https://pixabay.com/api/?key=${process.env.PIXABAY_API_KEY}&q=${chosenSearchTerm}&per_page=10`;
+
+			const response = await axios.get(API_URL, {
+				responseType: "json",
+			});
+			const results = response.data.hits;
+			const chosenImage = results[Math.floor(Math.random() * results.length)];
+			const image = await fetchImage(chosenImage.largeImageURL);
+			const imageData = Buffer.from(image, "binary");
+			const fontSize = 80;
+			const metadata = await sharp(imageData).metadata();
+			const maxWidth = parseInt(metadata.width / (fontSize / 2));
+			let lines = wrapText(text, maxWidth, fontSize);
+			lines[0] = '"' + lines[0];
+			const lastIndex = lines.length - 1;
+			lines[lastIndex] = lines[lastIndex] + '"';
+			let svgText = `<svg width="${metadata.width}" height="${metadata.height}">`;
+
+			lines.forEach((line, index) => {
+				svgText += `<text x="50%" y="${30 + index * 10}%" alignment-baseline="middle" text-anchor="middle" font-size="${fontSize}" fill="white">${line}</text>`;
+			});
+
+			svgText += `<text x="90%" y="${40 + lines.length * 10}%" alignment-baseline="middle" text-anchor="end" font-size="${fontSize}" fill="white">- ${getSenderInfo(sender)}</text>`;
+			svgText += `</svg>`;
+			const modifiedImage = await sharp(imageData)
+				.composite([
+					{
+						input: Buffer.from(svgText),
+					},
+				])
+				.toFormat("jpeg")
+				.toBuffer();
+
+			const buffer = await sharp(modifiedImage).toBuffer();
+			resolve(buffer);
+		} catch (err) {
+			console.error(err);
+			reject(err);
+		}
+	});
 }
