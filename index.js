@@ -6,6 +6,7 @@ var weather = require("weather-js");
 const axios = require("axios");
 const { error } = require("console");
 const sharp = require("sharp");
+const { removeImageBackground } = require("./utils/backgroundRemover");
 
 const bot = new Tgfancy(process.env.TELEGRAM_BOT_TOKEN, {
 	polling: true,
@@ -30,12 +31,25 @@ function handleMessages({ chatId, msg, text, sender }) {
 			bot.sendMessage(chatId, "hi");
 			break;
 		case "/help":
-			bot.sendMessage(chatId, "Commands:\n/trans to translate text\n/weather to get the weather");
+			bot.sendMessage(
+				chatId,
+				`Commands:
+                /trans <text> to translate text
+                /weather <location> to get the weather
+                /unsplash while replying to a message to get an image quote
+                /cf or /coinflip to get a coin flip`
+			);
+			break;
+		case "/cf":
+		case "/coinflip":
+			const isHead = Math.random() < 0.5;
+			handleResponse(isHead ? "Heads." : "Tails.", msg, chatId, myCache, bot, null).catch((err) => {
+				console.error(err);
+			});
 			break;
 		case "/unsplash":
 			const replyToMessage = msg.reply_to_message;
 			if (replyToMessage) {
-				console.log(replyToMessage);
 				generateUnsplashImage(replyToMessage.text, replyToMessage.from)
 					.then((buffer) => {
 						bot.sendPhoto(chatId, buffer);
@@ -69,6 +83,7 @@ function handleMessages({ chatId, msg, text, sender }) {
 					console.error(err);
 				});
 			break;
+		case "/translate":
 		case "/trans":
 			const translateString = text.split(" ").slice(1).join(" ");
 			const ansiEscapeRegex = /\x1B\[[0-?]*[ -/]*[@-~]/g;
@@ -82,6 +97,26 @@ function handleMessages({ chatId, msg, text, sender }) {
 					console.error(err);
 				});
 			break;
+		case "/removebackground":
+			if (msg.reply_to_message && msg.reply_to_message.photo) {
+				const chatId = msg.chat.id;
+				const photoArray = msg.reply_to_message.photo;
+				const highestQualityPhoto = photoArray[photoArray.length - 1];
+				bot.getFileLink(highestQualityPhoto.file_id).then(async (link) => {
+					const response = await axios({
+						method: "get",
+						url: link,
+						responseType: "arraybuffer",
+					});
+					const imageData = response.data;
+					const result = await removeImageBackground(imageData);
+					const fileOpts = {
+						filename: "image.png",
+						contentType: "image/png",
+					};
+					await bot.sendPhoto(chatId, result, fileOpts);
+				});
+			}
 	}
 }
 
@@ -222,7 +257,7 @@ const darkNatureSearchTerms = [
 	"forest+moonlight",
 	"mountain+night",
 	"river+twilight",
-	"desert+starry sky",
+	"desert+starry+sky",
 	"ocean+moon",
 	"lake+night",
 	"snow+night",
