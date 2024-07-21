@@ -5,12 +5,12 @@ const NodeCache = require("node-cache");
 var weather = require("weather-js");
 const axios = require("axios");
 const { error } = require("console");
-const sharp = require("sharp");
-const { removeImageBackground, generateUnsplashImage } = require("./utils/image");
+const { removeImageBackground, generateUnsplashImage, doOCR } = require("./utils/image");
 const { sendSimpleRequestToClaude } = require("./utils/ai");
 const bot = new Tgfancy(process.env.TELEGRAM_BOT_TOKEN, {
 	polling: true,
 });
+
 const myCache = new NodeCache();
 bot.on("edited_message", async (msg) => {
 	const chatId = msg.chat.id;
@@ -49,6 +49,26 @@ function handleMessages({ chatId, msg, text, sender }) {
 			handleResponse(isHead ? "Heads." : "Tails.", msg, chatId, myCache, bot, null).catch((err) => {
 				console.error(err);
 			});
+			break;
+		case "/ocr":
+			let language = text.split(" ")[1]?.trim();
+			if (msg.reply_to_message && msg.reply_to_message.photo) {
+				const chatId = msg.chat.id;
+				const photoArray = msg.reply_to_message.photo;
+				const highestQualityPhoto = photoArray[photoArray.length - 1];
+				bot.getFileLink(highestQualityPhoto.file_id).then(async (link) => {
+					const response = await axios({
+						method: "get",
+						url: link,
+						responseType: "arraybuffer",
+					});
+					const imageData = response.data;
+					const output = await doOCR(language, imageData);
+					handleResponse(output, msg, chatId, myCache, bot, null).catch((err) => {
+						console.error(err);
+					});
+				});
+			}
 			break;
 		case "/unsplash":
 			const replyToMessage = msg.reply_to_message;
@@ -103,10 +123,17 @@ function handleMessages({ chatId, msg, text, sender }) {
 			break; */
 		case "/translate":
 		case "/trans":
-			const textMsg = text.split(" ").slice(1).join(" ");
+			let textMsg = text.split(" ").slice(1).join(" ");
+			let languageInfo = textMsg.split(" ")[0];
+			if (languageInfo.includes(":")) {
+				textMsg = text.split(" ").slice(2).join(" ");
+			} else {
+				languageInfo = null;
+			}
 			const translateString = (textMsg.trim().length ? textMsg : msg.reply_to_message?.text?.split(" ").slice(1).join(" ")) || "";
 			const ansiEscapeRegex = /\x1B\[[0-?]*[ -/]*[@-~]/g;
-			translateShell(translateString)
+
+			translateShell(translateString, languageInfo)
 				.then(async (response) => {
 					handleResponse(response.replace(ansiEscapeRegex, ""), msg, chatId, myCache, bot, "pre").catch((err) => {
 						console.error(err);
@@ -172,9 +199,6 @@ function handleMessages({ chatId, msg, text, sender }) {
 				}
 			});
 			break;
-		default:
-			console.log(msg);
-			break;
 	}
 }
 
@@ -224,11 +248,11 @@ async function sendNewMessage(bot, chatId, data, messageId, myCache, containerFo
 	}
 }
 
-function translateShell(string) {
+function translateShell(string, languagePart) {
 	return new Promise((resolve, reject) => {
 		isAllowed = /^[a-zA-Z0-9 ]+$/.test(string);
 		//if (isAllowed) {
-		exec(`trans "${string}"`, (error, stdout, stderr) => {
+		exec(`trans ${languagePart || ""} "${string}"`, (error, stdout, stderr) => {
 			if (error) {
 				console.error(`exec error: ${error}`);
 				reject(stderr);

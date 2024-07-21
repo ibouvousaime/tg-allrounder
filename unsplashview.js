@@ -5,59 +5,49 @@ function getUnsplashView(imageLink, quote, author) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Raleway:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Raleway:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
     <title>Quote Display</title>
     <style>
-         body, html {
+        body, html {
             height: 100%;
             margin: 0;
-            font-family: "Raleway", sans-serif;
+            font-family: 'Raleway', sans-serif;
             display: flex;
             justify-content: center;
             align-items: center;
-            text-align: center;
             background-image: url('${imageLink}');
             background-size: cover;
             background-position: center;
             background-repeat: no-repeat;
         }
         .quote-container {
-            background-color: rgba(0, 0, 0, 0.35);
-            padding: 20px;
-            border-radius: 10px;
-            color: white;
-            width: 80%; 
-            height: 50%; 
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
+            background-color: rgba(0, 0, 0, 0.5); 
+            padding: 40px;
+            border-radius: 15px; 
+            color: #ffffff;
+            max-width: 80%;
+            text-align: center;
         }
         .quote {
             font-size: calc(2em + 2vw); 
             margin-bottom: 20px;
-            flex-grow: 1;
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            font-weight: bold; 
         }
         .author {
             font-size: calc(1em + 1vw); 
             text-align: right;
-            align-self: flex-end;
-            margin-top: -10px;
+            font-style: italic;
         }
     </style>
 </head>
 <body>
     <div class="quote-container">
         <div class="quote">${quote}</div>
-        <div class="author">-${author}</div>
+        <div class="author">- ${author}</div>
     </div>
 </body>
-</html>
-`;
+</html>`;
 }
 
 module.exports = { getUnsplashView };

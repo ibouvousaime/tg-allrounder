@@ -16,10 +16,9 @@
 		"@extractus/article-extractor": "^8.0.10",
 		"axios": "^1.7.2",
 		"dotenv": "^16.4.5",
-		"natural": "^7.1.0",
 		"node-cache": "^5.1.2",
 		"puppeteer": "^22.13.1",
-		"sharp": "^0.33.4",
+		"tesseract.js": "^5.1.0",
 		"tgfancy": "^0.13.0",
 		"weather-js": "^2.0.0"
 	}

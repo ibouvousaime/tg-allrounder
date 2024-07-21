@@ -4,6 +4,7 @@ const { exec } = require("child_process");
 const axios = require("axios");
 const puppeteer = require("puppeteer");
 const { getUnsplashView } = require("../unsplashview");
+const { createWorker } = require("tesseract.js");
 
 const darkNatureSearchTerms = [
 	"forest+moonlight",
@@ -18,8 +19,218 @@ const darkNatureSearchTerms = [
 	"jungle+night",
 ];
 
+const supportedLanguages = [
+	"afr",
+	"amh",
+	"ara",
+	"asm",
+	"aze",
+	"aze_cyrl",
+	"bel",
+	"ben",
+	"bod",
+	"bos",
+	"bul",
+	"cat",
+	"ceb",
+	"ces",
+	"chi_sim",
+	"chi_tra",
+	"chr",
+	"cym",
+	"dan",
+	"deu",
+	"dzo",
+	"ell",
+	"eng",
+	"enm",
+	"epo",
+	"est",
+	"eus",
+	"fas",
+	"fin",
+	"fra",
+	"frk",
+	"frm",
+	"gle",
+	"glg",
+	"grc",
+	"guj",
+	"hat",
+	"heb",
+	"hin",
+	"hrv",
+	"hun",
+	"iku",
+	"ind",
+	"isl",
+	"ita",
+	"ita_old",
+	"jav",
+	"jpn",
+	"kan",
+	"kat",
+	"kat_old",
+	"kaz",
+	"khm",
+	"kir",
+	"kor",
+	"kur",
+	"lao",
+	"lat",
+	"lav",
+	"lit",
+	"mal",
+	"mar",
+	"mkd",
+	"mlt",
+	"msa",
+	"mya",
+	"nep",
+	"nld",
+	"nor",
+	"ori",
+	"pan",
+	"pol",
+	"por",
+	"pus",
+	"ron",
+	"rus",
+	"san",
+	"sin",
+	"slk",
+	"slv",
+	"spa",
+	"spa_old",
+	"sqi",
+	"srp",
+	"srp_latn",
+	"swa",
+	"swe",
+	"syr",
+	"tam",
+	"tel",
+	"tgk",
+	"tgl",
+	"tha",
+	"tir",
+	"tur",
+	"uig",
+	"ukr",
+	"urd",
+	"uzb",
+	"uzb_cyrl",
+	"vie",
+	"yid",
+];
+
+const supportedLanguageNames = [
+	"Afrikaans",
+	"Amharic",
+	"Arabic",
+	"Assamese",
+	"Azerbaijani",
+	"Azerbaijani - Cyrillic",
+	"Belarusian",
+	"Bengali",
+	"Tibetan",
+	"Bosnian",
+	"Bulgarian",
+	"Catalan; Valencian",
+	"Cebuano",
+	"Czech",
+	"Chinese - Simplified",
+	"Chinese - Traditional",
+	"Cherokee",
+	"Welsh",
+	"Danish",
+	"German",
+	"Dzongkha",
+	"Greek, Modern (1453-)",
+	"English",
+	"English, Middle (1100-1500)",
+	"Esperanto",
+	"Estonian",
+	"Basque",
+	"Persian",
+	"Finnish",
+	"French",
+	"German Fraktur",
+	"French, Middle (ca. 1400-1600)",
+	"Irish",
+	"Galician",
+	"Greek, Ancient (-1453)",
+	"Gujarati",
+	"Haitian; Haitian Creole",
+	"Hebrew",
+	"Hindi",
+	"Croatian",
+	"Hungarian",
+	"Inuktitut",
+	"Indonesian",
+	"Icelandic",
+	"Italian",
+	"Italian - Old",
+	"Javanese",
+	"Japanese",
+	"Kannada",
+	"Georgian",
+	"Georgian - Old",
+	"Kazakh",
+	"Central Khmer",
+	"Kirghiz; Kyrgyz",
+	"Korean",
+	"Kurdish",
+	"Lao",
+	"Latin",
+	"Latvian",
+	"Lithuanian",
+	"Malayalam",
+	"Marathi",
+	"Macedonian",
+	"Maltese",
+	"Malay",
+	"Burmese",
+	"Nepali",
+	"Dutch; Flemish",
+	"Norwegian",
+	"Oriya",
+	"Panjabi; Punjabi",
+	"Polish",
+	"Portuguese",
+	"Pushto; Pashto",
+	"Romanian; Moldavian; Moldovan",
+	"Russian",
+	"Sanskrit",
+	"Sinhala; Sinhalese",
+	"Slovak",
+	"Slovenian",
+	"Spanish; Castilian",
+	"Spanish; Castilian - Old",
+	"Albanian",
+	"Serbian",
+	"Serbian - Latin",
+	"Swahili",
+	"Swedish",
+	"Syriac",
+	"Tamil",
+	"Telugu",
+	"Tajik",
+	"Tagalog",
+	"Thai",
+	"Tigrinya",
+	"Turkish",
+	"Uighur; Uyghur",
+	"Ukrainian",
+	"Urdu",
+	"Uzbek",
+	"Uzbek - Cyrillic",
+	"Vietnamese",
+	"Yiddish",
+];
+
 function getSenderInfo(sender) {
-	return `${sender.first_name} ${sender.last_name ? sender.last_name : ""} (@${sender.username})`;
+	return `${sender.first_name} ${sender.last_name ? sender.last_name : ""} (@${sender.username || "anonymous"})`;
 }
 
 ///
@@ -76,4 +287,35 @@ function generateUnsplashImage(text, sender) {
 	});
 }
 
-module.exports = { removeImageBackground, generateUnsplashImage };
+function doOCR(language, imageBuffer) {
+	return new Promise(async (resolve, reject) => {
+		try {
+			language = language?.length ? language : "eng";
+			if (language.toLowerCase() == "chinese") {
+				language = "chi_sim";
+			}
+			const isFullLanguageName = supportedLanguageNames.findIndex((lang) => lang == language[0].toUpperCase() + language.slice(1));
+
+			if (isFullLanguageName != -1) {
+				language = supportedLanguages[isFullLanguageName];
+			}
+			if (supportedLanguages.includes(language)) {
+				const worker = await createWorker(language);
+				const {
+					data: { text },
+				} = await worker.recognize(imageBuffer);
+				resolve(text);
+				await worker.terminate();
+			} else {
+				resolve(
+					`${language} is not supported. Please consult <a href="https://tesseract-ocr.github.io/tessdoc/Data-Files#data-files-for-version-400-november-29-2016">this page</a> to figure out the language code you're looking for. Remember you can just edit your message and this text will be updated.`
+				);
+			}
+		} catch (err) {
+			console.error(err);
+			reject(err);
+		}
+	});
+}
+
+module.exports = { removeImageBackground, generateUnsplashImage, doOCR };
