@@ -7,9 +7,7 @@ const axios = require("axios");
 const { error } = require("console");
 const sharp = require("sharp");
 const { removeImageBackground, generateUnsplashImage } = require("./utils/image");
-const natural = require("natural");
 const { sendSimpleRequestToClaude } = require("./utils/ai");
-const tokenizer = new natural.SentenceTokenizer();
 const bot = new Tgfancy(process.env.TELEGRAM_BOT_TOKEN, {
 	polling: true,
 });
@@ -24,6 +22,7 @@ bot.on("text", async (msg) => {
 	const chatId = msg.chat.id;
 	const text = msg.text;
 	const sender = msg.from;
+	if (text.trim()[0] != "/") return;
 	handleMessages({ chatId, text, msg, sender });
 });
 
@@ -151,6 +150,12 @@ function handleMessages({ chatId, msg, text, sender }) {
 			let webpageURL = currentMessageURL || repliedToMessageURL;
 			import("@extractus/article-extractor").then(async ({ extract }) => {
 				try {
+					if (!webpageURL) {
+						handleResponse("No link detected.", msg, chatId, myCache, bot, "i").catch((err) => {
+							console.error(err);
+						});
+						return;
+					}
 					const article = await extract(webpageURL);
 					const cleanedContent = article.content.replace(/<[^>]*>/g, "");
 					const prompt = "Generate a tldr for this article";
@@ -167,6 +172,9 @@ function handleMessages({ chatId, msg, text, sender }) {
 				}
 			});
 			break;
+		default:
+			console.log(msg);
+			break;
 	}
 }
 
@@ -175,27 +183,6 @@ function extractUrl(text) {
 	const urlRegex = /(\bhttps?:\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/gi;
 	const urls = text.match(urlRegex);
 	return urls ? urls[0] : null;
-}
-
-function summarizeText(text, maxSentences = 2) {
-	const sentences = tokenizer.tokenize(text);
-	const TfIdf = natural.TfIdf;
-	const tfidf = new TfIdf();
-	sentences.forEach((sentence) => {
-		tfidf.addDocument(sentence);
-	});
-	const sentenceImportance = sentences.map((sentence, index) => {
-		return {
-			sentence,
-			importance: tfidf.tfidf(sentence, index),
-		};
-	});
-
-	sentenceImportance.sort((a, b) => b.importance - a.importance);
-	return sentenceImportance
-		.slice(0, maxSentences)
-		.map((item) => item.sentence)
-		.join(" ");
 }
 
 function handleResponse(text, msg, chatId, myCache, bot, containerFormat) {
