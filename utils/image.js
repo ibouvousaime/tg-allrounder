@@ -67,6 +67,7 @@ function generateUnsplashImage(text, sender) {
 			const view = getUnsplashView(chosenImage.largeImageURL, text, getSenderInfo(sender));
 			await page.setContent(view);
 			const buffer = await page.screenshot({});
+			browser.close();
 			resolve(buffer);
 		} catch (err) {
 			console.error(err);

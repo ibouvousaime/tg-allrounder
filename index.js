@@ -8,6 +8,7 @@ const { error } = require("console");
 const sharp = require("sharp");
 const { removeImageBackground, generateUnsplashImage } = require("./utils/image");
 const natural = require("natural");
+const { sendSimpleRequestToClaude } = require("./utils/ai");
 const tokenizer = new natural.SentenceTokenizer();
 const bot = new Tgfancy(process.env.TELEGRAM_BOT_TOKEN, {
 	polling: true,
@@ -138,25 +139,39 @@ function handleMessages({ chatId, msg, text, sender }) {
 					await bot.sendPhoto(chatId, result, fileOpts);
 				});
 			} else {
-				handleResponse("This command should be a response to a message that has an image, you donkey.", msg, chatId, myCache, bot, "pre").catch((err) => {
+				handleResponse("This command should be a response to a message that has an image, you donkey.", msg, chatId, myCache, bot, null).catch((err) => {
 					console.error(err);
 				});
 			}
 			break;
 		case "/tldr":
-			let webpageURL = extractUrl(msg.text) || extractUrl(msg.reply_to_message?.text);
+			const currentMessageURL = extractUrl(msg.text);
+			const repliedToMessageURL = extractUrl(msg.reply_to_message?.text);
+			const msgQuestion = msg.text.split(" ").slice(1).join(" ").trim();
+			let webpageURL = currentMessageURL || repliedToMessageURL;
 			import("@extractus/article-extractor").then(async ({ extract }) => {
-				const article = await extract(webpageURL);
-				const summary = summarizeText(article.content.replace(/<[^>]*>/g, ""));
-				handleResponse(summary, msg, chatId, myCache, bot, "i").catch((err) => {
+				try {
+					const article = await extract(webpageURL);
+					const cleanedContent = article.content.replace(/<[^>]*>/g, "");
+					const prompt = "Generate a tldr for this article";
+					let request = `${cleanedContent} ${prompt} `;
+					if (repliedToMessageURL && msgQuestion.length) {
+						request = `Give a very short answer to this question ${msgQuestion}. Here's the article to repond to the question: ${cleanedContent}`;
+					}
+					const summary = await sendSimpleRequestToClaude(request);
+					handleResponse(summary.content[0].text, msg, chatId, myCache, bot, "i").catch((err) => {
+						console.error(err);
+					});
+				} catch (err) {
 					console.error(err);
-				});
+				}
 			});
 			break;
 	}
 }
 
 function extractUrl(text) {
+	if (!text) return null;
 	const urlRegex = /(\bhttps?:\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/gi;
 	const urls = text.match(urlRegex);
 	return urls ? urls[0] : null;

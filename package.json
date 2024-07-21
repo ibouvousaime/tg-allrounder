@@ -12,6 +12,7 @@
 		"prettier": "3.3.3"
 	},
 	"dependencies": {
+		"@anthropic-ai/sdk": "^0.24.3",
 		"@extractus/article-extractor": "^8.0.10",
 		"axios": "^1.7.2",
 		"dotenv": "^16.4.5",
