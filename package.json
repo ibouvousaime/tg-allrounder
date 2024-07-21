@@ -17,6 +17,7 @@
 		"dotenv": "^16.4.5",
 		"natural": "^7.1.0",
 		"node-cache": "^5.1.2",
+		"puppeteer": "^22.13.1",
 		"sharp": "^0.33.4",
 		"tgfancy": "^0.13.0",
 		"weather-js": "^2.0.0"
