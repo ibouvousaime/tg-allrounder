@@ -13,6 +13,7 @@ function getUnsplashView(imageLink, quote, author) {
                 height: 100%;
                 margin: 0;
                 font-family: 'Raleway', sans-serif;
+                font-variant: small-caps;
                 display: flex;
                 justify-content: center;
                 align-items: center;
@@ -32,7 +33,6 @@ function getUnsplashView(imageLink, quote, author) {
             .quote {
                 font-size: calc(2em + 2vw); 
                 margin-bottom: 20px;
-                font-weight: bold; 
             }
             .author {
                 font-size: calc(1em + 1vw); 

@@ -7,8 +7,10 @@ const axios = require("axios");
 const { error } = require("console");
 const { removeImageBackground, generateUnsplashImage, doOCR } = require("./utils/image");
 const { sendSimpleRequestToClaude } = require("./utils/ai");
+const fs = require("fs");
 const bot = new Tgfancy(process.env.TELEGRAM_BOT_TOKEN, {
 	polling: true,
+	baseApiUrl: "http://localhost:8081",
 });
 
 const myCache = new NodeCache();
@@ -56,15 +58,18 @@ function handleMessages({ chatId, msg, text, sender }) {
 				const chatId = msg.chat.id;
 				const photoArray = msg.reply_to_message.photo;
 				const highestQualityPhoto = photoArray[photoArray.length - 1];
-				bot.getFileLink(highestQualityPhoto.file_id).then(async (link) => {
-					const response = await axios({
-						method: "get",
-						url: link,
-						responseType: "arraybuffer",
-					});
-					const imageData = response.data;
+				bot.getFile(highestQualityPhoto.file_id).then(async (file) => {
+					const filePath = file.file_path;
+					const imageData = await fs.readFileSync(filePath);
 					const output = await doOCR(language, imageData);
-					handleResponse(output, msg, chatId, myCache, bot, null).catch((err) => {
+					handleResponse(
+						output.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;"),
+						msg,
+						chatId,
+						myCache,
+						bot,
+						null
+					).catch((err) => {
 						console.error(err);
 					});
 				});
@@ -98,7 +103,7 @@ function handleMessages({ chatId, msg, text, sender }) {
 			const location = text.split(" ").slice(1).join(" ");
 			getWeather(location)
 				.then(async (weatherData) => {
-					handleResponse(weatherData, msg, chatId, myCache, bot, "code").catch((err) => {
+					handleResponse(weatherData, msg, chatId, myCache, bot, "pre").catch((err) => {
 						console.error(err);
 					});
 				})
@@ -106,21 +111,10 @@ function handleMessages({ chatId, msg, text, sender }) {
 					console.error(err);
 				});
 			break;
-		/* 		case "/cancel":
-			const person = msg.reply_to_message?.from;
-			if (person) {
-				handleResponse(
-					`${person.first_name} ${person.last_name ? person.last_name : ""}(${person.username}) has been cancelled for saying something so vile. Eww.`,
-					msg,
-					chatId,
-					myCache,
-					bot,
-					null
-				).catch((err) => {
-					console.error(err);
-				});
-			}
-			break; */
+		case "/processPoll":
+			console.log(msg.reply_to_message?.poll);
+			bot.sendMessage(msg.chat.id, `I am connected to: ${bot.options.baseApiUrl}`);
+			break;
 		case "/translate":
 		case "/trans":
 			let textMsg = text.split(" ").slice(1).join(" ");
@@ -150,13 +144,9 @@ function handleMessages({ chatId, msg, text, sender }) {
 				const chatId = msg.chat.id;
 				const photoArray = msg.reply_to_message.photo;
 				const highestQualityPhoto = photoArray[photoArray.length - 1];
-				bot.getFileLink(highestQualityPhoto.file_id).then(async (link) => {
-					const response = await axios({
-						method: "get",
-						url: link,
-						responseType: "arraybuffer",
-					});
-					const imageData = response.data;
+				bot.getFile(highestQualityPhoto.file_id).then(async (file) => {
+					const filePath = file.file_path;
+					const imageData = await fs.readFileSync(filePath);
 					const result = await removeImageBackground(imageData);
 					const fileOpts = {
 						filename: "image.png",
@@ -293,16 +283,19 @@ function getFormattedWeatherData(item) {
 	const resultLines = [];
 	resultLines.push(`Location: ${item.location.name}`);
 	resultLines.push(`Current Temperature: ${item.current.temperature}°${item.location.degreetype}`);
+	resultLines.push(`Humidity: ${item.current.humidity}%`);
+	if (item.current.feelslike) resultLines.push(`Feels Like: ${item.current.feelslike}°${item.location.degreetype}`);
 	resultLines.push(`Conditions: ${item.current.skytext}`);
 	resultLines.push(`Observation Time: ${item.current.observationtime} on ${item.current.date}`);
-	resultLines.push(`Humidity: ${item.current.humidity}%`);
 	resultLines.push(`Wind: ${item.current.winddisplay}`);
-	resultLines.push("Forecast:");
+	if (item.current.dewPt) resultLines.push(`Dew point: ${item.current.dewPt}°${item.location.degreetype}`);
+	console.log(item);
+	/* 	resultLines.push("Forecast:");
 	item.forecast.forEach((day) => {
 		resultLines.push(`  ${day.day} (${day.date}): ${day.skytextday}, ${day.low}°-${day.high}°`);
 		if (day.precip) {
 			resultLines.push(`    Chance of precipitation: ${day.precip}%`);
 		}
-	});
+	}); */
 	return resultLines.join("\n");
 }
