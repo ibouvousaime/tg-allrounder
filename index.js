@@ -75,7 +75,7 @@ function handleMessages({ chatId, msg, text, sender }) {
 			if (replyToMessage) {
 				generateUnsplashImage(replyToMessage.text, replyToMessage.from)
 					.then((buffer) => {
-						bot.sendPhoto(chatId, buffer);
+						bot.sendPhoto(chatId, buffer, { reply_to_message_id: msg.message_id });
 					})
 					.catch((err) => {
 						console.error(error);
@@ -161,6 +161,7 @@ function handleMessages({ chatId, msg, text, sender }) {
 					const fileOpts = {
 						filename: "image.png",
 						contentType: "image/png",
+						reply_to_message_id: msg.message_id,
 					};
 					await bot.sendPhoto(chatId, result, fileOpts);
 				});
@@ -185,13 +186,14 @@ function handleMessages({ chatId, msg, text, sender }) {
 					}
 					const article = await extract(webpageURL);
 					const cleanedContent = article.content.replace(/<[^>]*>/g, "");
-					const prompt = "Generate a tldr for this article";
-					let request = `${cleanedContent} ${prompt} `;
+					const telegramHTMLPrompt = `Reply in the telegram bot API HTML.`;
+					const prompt = "Generate a tldr for this article.";
+					let request = `${cleanedContent} ${prompt}\n ${telegramHTMLPrompt}`;
 					if (repliedToMessageURL && msgQuestion.length) {
-						request = `Give a very short answer to this question ${msgQuestion}. Here's the article to repond to the question: ${cleanedContent}`;
+						request = `Give a very short answer to this question ${msgQuestion}. Here's the article to repond to the question: ${cleanedContent}\n ${telegramHTMLPrompt}`;
 					}
 					const summary = await sendSimpleRequestToClaude(request);
-					handleResponse(summary.content[0].text, msg, chatId, myCache, bot, "i").catch((err) => {
+					handleResponse(summary.content[0].text, msg, chatId, myCache, bot, null).catch((err) => {
 						console.error(err);
 					});
 				} catch (err) {
