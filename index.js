@@ -8,6 +8,7 @@ const { error } = require("console");
 const { removeImageBackground, generateUnsplashImage, doOCR } = require("./utils/image");
 const { sendSimpleRequestToClaude } = require("./utils/ai");
 const fs = require("fs");
+const { getWordEtymology } = require("./utils/dictionary");
 const bot = new Tgfancy(process.env.TELEGRAM_BOT_TOKEN, {
 	polling: true,
 	baseApiUrl: "http://localhost:8081",
@@ -76,11 +77,25 @@ function handleMessages({ chatId, msg, text, sender }) {
 			}
 			break;
 		case "/unsplash":
-			const replyToMessage = msg.reply_to_message;
+			let replyToMessage = msg.reply_to_message;
+			if (msg.reply_to_message?.forward_from) {
+				replyToMessage = { from: msg.reply_to_message?.forward_from };
+			}
+			if (msg.reply_to_message?.forward_origin) {
+				replyToMessage = { from: { first_name: msg.reply_to_message?.forward_origin?.sender_user_name } };
+			}
+			if (msg.quote?.text) {
+				msg.quote.text = `${msg.quote.position != 0 ? "..." : ""}${msg.quote.text}${msg.quote.position + msg.quote.text.length < msg.reply_to_message.text.length ? "..." : ""}`;
+			}
+			const messageToQuote = msg.quote?.text || msg.reply_to_message?.text;
 			if (replyToMessage) {
-				generateUnsplashImage(replyToMessage.text, replyToMessage.from)
+				generateUnsplashImage(messageToQuote, replyToMessage.from)
 					.then((buffer) => {
-						bot.sendPhoto(chatId, buffer, { reply_to_message_id: msg.message_id });
+						const fileOptions = {
+							filename: "image.png",
+							contentType: "image/png",
+						};
+						bot.sendPhoto(chatId, buffer, { reply_to_message_id: msg.message_id }, fileOptions);
 					})
 					.catch((err) => {
 						console.error(error);
@@ -124,11 +139,14 @@ function handleMessages({ chatId, msg, text, sender }) {
 			} else {
 				languageInfo = null;
 			}
-			const translateString = (textMsg.trim().length ? textMsg : msg.reply_to_message?.text?.split(" ").slice(1).join(" ")) || "";
+			const translateString = (textMsg.trim().length ? textMsg : (msg.quote?.text || msg.reply_to_message?.text)?.split(" ").slice(1).join(" ")) || "";
 			const ansiEscapeRegex = /\x1B\[[0-?]*[ -/]*[@-~]/g;
 
 			translateShell(translateString, languageInfo)
 				.then(async (response) => {
+					if (response.length == 0) {
+						bot.sendMessage();
+					}
 					handleResponse(response.replace(ansiEscapeRegex, ""), msg, chatId, myCache, bot, "pre").catch((err) => {
 						console.error(err);
 					});
@@ -149,11 +167,13 @@ function handleMessages({ chatId, msg, text, sender }) {
 					const imageData = await fs.readFileSync(filePath);
 					const result = await removeImageBackground(imageData);
 					const fileOpts = {
-						filename: "image.png",
-						contentType: "image/png",
 						reply_to_message_id: msg.message_id,
 					};
-					await bot.sendPhoto(chatId, result, fileOpts);
+					const fileOptions = {
+						filename: "image.png",
+						contentType: "image/png",
+					};
+					await bot.sendPhoto(chatId, result, fileOpts, fileOptions);
 				});
 			} else {
 				handleResponse("This command should be a response to a message that has an image, you donkey.", msg, chatId, myCache, bot, null).catch((err) => {

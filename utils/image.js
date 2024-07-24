@@ -5,7 +5,10 @@ const axios = require("axios");
 const puppeteer = require("puppeteer");
 const { getUnsplashView } = require("../unsplashview");
 const { createWorker } = require("tesseract.js");
-
+const LanguageDetect = require("languagedetect");
+const keyword_extractor = require("keyword-extractor");
+const natural = require("natural");
+const TfIdf = natural.TfIdf;
 const darkNatureSearchTerms = [
 	"forest+moonlight",
 	"mountain+night",
@@ -237,6 +240,37 @@ function getSenderInfo(sender) {
 //
 //
 //
+function getMostImportantWord(sentence) {
+	const tfidf = new TfIdf();
+	tfidf.addDocument(sentence);
+	const words = new Set(sentence.toLowerCase().match(/\b\w+\b/g));
+	let maxScore = 0;
+	let mostImportantWord = "";
+	words.forEach((word) => {
+		const score = tfidf.tfidf(word, 0);
+		if (score > maxScore) {
+			maxScore = score;
+			mostImportantWord = word;
+		}
+	});
+	console.log(mostImportantWord, "important");
+	return mostImportantWord;
+}
+
+async function getKeyword(text, language) {
+	if (language == "en" || language == "fr") {
+		const extraction_result = keyword_extractor.extract(text, {
+			language,
+			remove_digits: true,
+			return_changed_case: true,
+			remove_duplicates: false,
+		});
+		console.log(extraction_result);
+		return extraction_result.length > 0 ? extraction_result : darkNatureSearchTerms;
+	} else {
+		return darkNatureSearchTerms;
+	}
+}
 function removeImageBackground(buffer) {
 	return new Promise((resolve, reject) => {
 		try {
@@ -262,24 +296,40 @@ function removeImageBackground(buffer) {
 	});
 }
 
-function generateUnsplashImage(text, sender) {
+function generateUnsplashImage(text, sender, useDefaultImages = false) {
 	return new Promise(async (resolve, reject) => {
 		try {
-			chosenSearchTerm = darkNatureSearchTerms[Math.floor(Math.random() * darkNatureSearchTerms.length)];
-			const API_URL = `https://pixabay.com/api/?key=${process.env.PIXABAY_API_KEY}&q=${chosenSearchTerm}&per_page=10`;
+			const lngDetector = new LanguageDetect();
+			lngDetector.setLanguageType("iso2");
+			const language = lngDetector.detect(text, 1)[0][0];
+			const keywords = darkNatureSearchTerms;
+			chosenSearchTerm = useDefaultImages ? keywords[Math.floor(Math.random() * keywords.length)] : getMostImportantWord(text);
+			const API_URL = `https://pixabay.com/api/?key=${process.env.PIXABAY_API_KEY}&q=${chosenSearchTerm}&per_page=10&lang=${language}`;
 
 			const response = await axios.get(API_URL, {
 				responseType: "json",
 			});
-			const results = response.data.hits;
-			const chosenImage = results[Math.floor(Math.random() * results.length)];
-			const browser = await puppeteer.launch();
-			const page = await browser.newPage();
-			const view = getUnsplashView(chosenImage.largeImageURL, text, getSenderInfo(sender));
-			await page.setContent(view);
-			const buffer = await page.screenshot({});
-			browser.close();
-			resolve(buffer);
+			if (response.status == 429) {
+				setTimeout(async () => {
+					resolve(await generateUnsplashImage(text, sender, useDefaultImages));
+				}, 10000);
+			} else {
+				const results = response.data.hits;
+				if (response.data.hits.length == 0) {
+					setTimeout(async () => {
+						resolve(await generateUnsplashImage(text, sender, true));
+					}, 2000);
+				} else {
+					const chosenImage = results[Math.floor(Math.random() * results.length)];
+					const browser = await puppeteer.launch();
+					const page = await browser.newPage();
+					const view = getUnsplashView(chosenImage.largeImageURL, text, getSenderInfo(sender));
+					await page.setContent(view);
+					const buffer = await page.screenshot({});
+					browser.close();
+					resolve(buffer);
+				}
+			}
 		} catch (err) {
 			console.error(err);
 			reject(err);
