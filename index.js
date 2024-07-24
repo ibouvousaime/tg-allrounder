@@ -35,6 +35,23 @@ function handleMessages({ chatId, msg, text, sender }) {
 		case "/start":
 			bot.sendMessage(chatId, "hi");
 			break;
+		case "/app":
+			const options = {
+				reply_markup: JSON.stringify({
+					inline_keyboard: [
+						[
+							{
+								text: "Button 1",
+								web_app: {
+									url: "https://revenkroz.github.io/telegram-web-app-bot-example/index.html",
+								},
+							},
+						],
+					],
+				}),
+			};
+			bot.sendMessage(chatId, "Here's the web app", option);
+			break;
 		case "/help":
 			bot.sendMessage(
 				chatId,
@@ -131,7 +148,7 @@ function handleMessages({ chatId, msg, text, sender }) {
 			console.log(msg.reply_to_message?.poll);
 			bot.sendMessage(msg.chat.id, `I am connected to: ${bot.options.baseApiUrl}`);
 			break;
-		case "/etymology":
+		/* 		case "/etymology":
 			let msgQuery = text.split(" ").slice(1).join(" ");
 			let lang = msgQuery.split(" ")[0];
 			if (lang.startsWith(":")) {
@@ -152,7 +169,7 @@ function handleMessages({ chatId, msg, text, sender }) {
 				.catch((err) => {
 					console.error(err);
 				});
-			break;
+			break; */
 		case "/translate":
 		case "/trans":
 			let textMsg = text.split(" ").slice(1).join(" ");
@@ -169,7 +186,17 @@ function handleMessages({ chatId, msg, text, sender }) {
 					if (response.length == 0) {
 						bot.sendMessage();
 					}
-					handleResponse(response.replace(ansiEscapeRegex, ""), msg, chatId, myCache, bot, "pre").catch((err) => {
+					console.log({ res: response.replace(ansiEscapeRegex, "") });
+					handleResponse(
+						response
+							.replace(ansiEscapeRegex, "")
+							.replace(/\n\s*\n/g, "\n")
+							.trim(),
+						msg,
+						chatId,
+						myCache,
+						bot
+					).catch((err) => {
 						console.error(err);
 					});
 				})

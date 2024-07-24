@@ -7,6 +7,7 @@ const { getUnsplashView } = require("../unsplashview");
 const { createWorker } = require("tesseract.js");
 const LanguageDetect = require("languagedetect");
 const natural = require("natural");
+const { sendSimpleRequestToClaude } = require("./ai");
 const TfIdf = natural.TfIdf;
 const darkNatureSearchTerms = [
 	"forest+moonlight",
@@ -254,6 +255,14 @@ function getMostImportantWord(sentence) {
 	});
 	return mostImportantWord;
 }
+
+/* async function getMostImportantWord(sentence) {
+	const mostImportantWord = (await sendSimpleRequestToClaude(`Provide a 2-word search query for an image to describe: "${sentence}".`)).content[0].text
+		.split(" ")
+		.join("+");
+	console.log(mostImportantWord);
+	return mostImportantWord;
+} */
 
 function removeImageBackground(buffer) {
 	return new Promise((resolve, reject) => {
