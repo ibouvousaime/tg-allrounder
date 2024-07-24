@@ -35,9 +35,9 @@ function handleMessages({ chatId, msg, text, sender }) {
 		case "/start":
 			bot.sendMessage(chatId, "hi");
 			break;
-		case "/app":
-			const options = {
-				reply_markup: JSON.stringify({
+		/* 		case "/app":
+			bot.sendMessage(chatId, "Here's the web app", {
+				reply_markup: {
 					inline_keyboard: [
 						[
 							{
@@ -48,10 +48,9 @@ function handleMessages({ chatId, msg, text, sender }) {
 							},
 						],
 					],
-				}),
-			};
-			bot.sendMessage(chatId, "Here's the web app", option);
-			break;
+				},
+			});
+			break; */
 		case "/help":
 			bot.sendMessage(
 				chatId,
