@@ -6,7 +6,6 @@ const puppeteer = require("puppeteer");
 const { getUnsplashView } = require("../unsplashview");
 const { createWorker } = require("tesseract.js");
 const LanguageDetect = require("languagedetect");
-const keyword_extractor = require("keyword-extractor");
 const natural = require("natural");
 const TfIdf = natural.TfIdf;
 const darkNatureSearchTerms = [
@@ -253,24 +252,9 @@ function getMostImportantWord(sentence) {
 			mostImportantWord = word;
 		}
 	});
-	console.log(mostImportantWord, "important");
 	return mostImportantWord;
 }
 
-async function getKeyword(text, language) {
-	if (language == "en" || language == "fr") {
-		const extraction_result = keyword_extractor.extract(text, {
-			language,
-			remove_digits: true,
-			return_changed_case: true,
-			remove_duplicates: false,
-		});
-		console.log(extraction_result);
-		return extraction_result.length > 0 ? extraction_result : darkNatureSearchTerms;
-	} else {
-		return darkNatureSearchTerms;
-	}
-}
 function removeImageBackground(buffer) {
 	return new Promise((resolve, reject) => {
 		try {

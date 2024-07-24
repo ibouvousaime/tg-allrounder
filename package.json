@@ -15,10 +15,8 @@
 		"@anthropic-ai/sdk": "^0.24.3",
 		"@extractus/article-extractor": "^8.0.10",
 		"axios": "^1.7.2",
-		"compromise": "^14.13.0",
 		"dotenv": "^16.4.5",
-		"franc-min": "^6.2.0",
-		"keyword-extractor": "^0.0.28",
+		"etymo-js": "^1.0.1",
 		"languagedetect": "^2.0.0",
 		"mongodb": "^6.8.0",
 		"natural": "^7.1.0",
@@ -26,7 +24,6 @@
 		"puppeteer": "^22.13.1",
 		"tesseract.js": "^5.1.0",
 		"tgfancy": "^0.13.0",
-		"weather-js": "^2.0.0",
-		"wiktionary-node": "^1.1.8"
+		"weather-js": "^2.0.0"
 	}
 }

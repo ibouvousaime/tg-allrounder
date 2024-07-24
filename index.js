@@ -13,6 +13,7 @@ const bot = new Tgfancy(process.env.TELEGRAM_BOT_TOKEN, {
 	polling: true,
 	baseApiUrl: "http://localhost:8081",
 });
+const ansiEscapeRegex = /\x1B\[[0-?]*[ -/]*[@-~]/g;
 
 const myCache = new NodeCache();
 bot.on("edited_message", async (msg) => {
@@ -130,6 +131,28 @@ function handleMessages({ chatId, msg, text, sender }) {
 			console.log(msg.reply_to_message?.poll);
 			bot.sendMessage(msg.chat.id, `I am connected to: ${bot.options.baseApiUrl}`);
 			break;
+		case "/etymology":
+			let msgQuery = text.split(" ").slice(1).join(" ");
+			let lang = msgQuery.split(" ")[0];
+			if (lang.startsWith(":")) {
+				msgQuery = text.split(" ").slice(2).join(" ");
+				lang = lang.slice(1);
+			} else {
+				lang = null;
+			}
+			const etymologyQuery = (msgQuery.trim().length ? msgQuery : msg.quote?.text || msg.reply_to_message?.text) || "";
+
+			getWordEtymology(etymologyQuery, lang)
+				.then((response) => {
+					if (response.length)
+						handleResponse(response.replace(ansiEscapeRegex, ""), msg, chatId, myCache, bot, "pre").catch((err) => {
+							console.error(err);
+						});
+				})
+				.catch((err) => {
+					console.error(err);
+				});
+			break;
 		case "/translate":
 		case "/trans":
 			let textMsg = text.split(" ").slice(1).join(" ");
@@ -139,8 +162,7 @@ function handleMessages({ chatId, msg, text, sender }) {
 			} else {
 				languageInfo = null;
 			}
-			const translateString = (textMsg.trim().length ? textMsg : (msg.quote?.text || msg.reply_to_message?.text)?.split(" ").slice(1).join(" ")) || "";
-			const ansiEscapeRegex = /\x1B\[[0-?]*[ -/]*[@-~]/g;
+			const translateString = (textMsg.trim().length ? textMsg : msg.quote?.text || msg.reply_to_message?.text) || "";
 
 			translateShell(translateString, languageInfo)
 				.then(async (response) => {
