@@ -5,7 +5,7 @@ const NodeCache = require("node-cache");
 var weather = require("weather-js");
 const axios = require("axios");
 const { error } = require("console");
-const { removeImageBackground, generateUnsplashImage, doOCR } = require("./utils/image");
+const { removeImageBackground, generateUnsplashImage, doOCR, generateWordCloud } = require("./utils/image");
 const { sendSimpleRequestToClaude } = require("./utils/ai");
 const fs = require("fs");
 const { getWordEtymology } = require("./utils/dictionary");
@@ -13,12 +13,44 @@ const bot = new Tgfancy(process.env.TELEGRAM_BOT_TOKEN, {
 	polling: true,
 	baseApiUrl: "http://localhost:8081",
 });
+const { MongoClient } = require("mongodb");
 const ansiEscapeRegex = /\x1B\[[0-?]*[ -/]*[@-~]/g;
+const eightBallResponses = [
+	"Yes, definitely",
+	"It is certain",
+	"Without a doubt",
+	"Yes, definitely",
+	"You may rely on it",
+	"As I see it, yes",
+	"Most likely",
+	"Outlook good",
+	"Yes",
+	"Signs point to yes",
+	"Reply hazy, try again",
+	"Ask again later",
+	"Better not tell you now",
+	"Cannot predict now",
+	"Concentrate and ask again",
+	"Don't count on it",
+	"My reply is no",
+	"My sources say no",
+	"Outlook not so good",
+	"Very doubtful",
+];
+const mongoUri = "mongodb://localhost:27017";
+
+const client = new MongoClient(mongoUri, {
+	useNewUrlParser: true,
+	useUnifiedTopology: true,
+});
+const db = client.db("messages");
+const collection = db.collection("messages");
 
 const myCache = new NodeCache();
 bot.on("edited_message", async (msg) => {
 	const chatId = msg.chat.id;
 	const text = msg.text || "";
+	collection.updateOne({ chatId: chatId, messageId: msg.message_id }, { $set: { text: msg.text } });
 	handleMessages({ chatId, msg, text, messageID: msg.message_id });
 });
 
@@ -26,42 +58,73 @@ bot.on("text", async (msg) => {
 	const chatId = msg.chat.id;
 	const text = msg.text;
 	const sender = msg.from;
+	const newMessage = {
+		chatId: chatId,
+		messageId: msg.message_id,
+		text: msg.text,
+		date: msg.date,
+		sender: [msg.from.first_name, msg.from.last_name].join(" "),
+	};
+	collection.insertOne(newMessage);
 	if (text.trim()[0] != "/") return;
 	handleMessages({ chatId, text, msg, sender });
 });
-
+function getRandomElement(arr) {
+	const randomIndex = Math.floor(Math.random() * arr.length);
+	return arr[randomIndex];
+}
 function handleMessages({ chatId, msg, text, sender }) {
 	switch (text.split(" ")[0].split("@")[0]) {
 		case "/start":
 			bot.sendMessage(chatId, "hi");
 			break;
-		/* 		case "/app":
-			bot.sendMessage(chatId, "Here's the web app", {
-				reply_markup: {
-					inline_keyboard: [
-						[
-							{
-								text: "Button 1",
-								web_app: {
-									url: "https://revenkroz.github.io/telegram-web-app-bot-example/index.html",
-								},
-							},
-						],
-					],
-				},
-			});
-			break; */
 		case "/help":
-			bot.sendMessage(
-				chatId,
-				`Commands:
-                /trans <text> to translate text
-                /weather <location> to get the weather
-                /unsplash while replying to a message to get an image quote
-                /cf or /coinflip to get a coin flip
-				/removebackground or /rmbg to remove the background (reply to a message with an image)
-				/tldr to get a summary-ish of an article`
-			);
+			const message = `Welcome! 🤖
+
+Here are the commands you can use:
+
+/weather - Get current weather information. Simply type <code>/weather [city name]</code> to get the latest weather update for your location.
+
+/trans - Translate text to different languages. Use <code>/trans :[language code] [text]</code> to get your translation. Example: <code>/trans :es Hello</code> to translate "Hello" to Spanish.
+
+/unsplash - Generate a quote image. Reply to a message with <code>/unsplash</code> to create a beautiful image with the quoted text.
+
+/coinflip - Flip a coin. Use <code>/coinflip</code> to flip a virtual coin and get heads or tails.
+
+/removebackground - Remove the background from an image. Reply to an image with <code>/removebackground</code> to get a version of the image with the background removed.
+
+/ocr - Perform Optical Character Recognition (OCR). Reply to an image with <code>/ocr</code> to extract text from the image.
+
+/wordcloud - Generate a word cloud image from the last 100 messages. Use <code>/wordcloud</code> to create a word cloud from recent text.
+
+`;
+			handleResponse(message, msg, chatId, myCache, bot, null).catch((err) => {
+				console.error(err);
+			});
+			break;
+		case "/8ball":
+			const response = getRandomElement(eightBallResponses);
+			handleResponse(response, msg, chatId, myCache, bot, null).catch((err) => {
+				console.error(err);
+			});
+			break;
+		case "/wordcloud":
+			collection
+				.find({ chatId })
+				.sort({ date: -1 })
+				.limit(100)
+				.toArray()
+				.then((result) => {
+					const messages = result.map((message) => message.text).join(" ");
+					generateWordCloud(messages).then((wordCloudImage) => {
+						const fileOptions = {
+							filename: "image.png",
+							contentType: "image/png",
+						};
+						bot.sendPhoto(chatId, wordCloudImage, { reply_to_message_id: msg.message_id }, fileOptions);
+					});
+				});
+
 			break;
 		case "/cf":
 		case "/coinflip":
@@ -73,7 +136,6 @@ function handleMessages({ chatId, msg, text, sender }) {
 		case "/ocr":
 			let language = text.split(" ")[1]?.trim();
 			if (msg.reply_to_message && msg.reply_to_message.photo) {
-				const chatId = msg.chat.id;
 				const photoArray = msg.reply_to_message.photo;
 				const highestQualityPhoto = photoArray[photoArray.length - 1];
 				bot.getFile(highestQualityPhoto.file_id).then(async (file) => {
@@ -131,6 +193,18 @@ function handleMessages({ chatId, msg, text, sender }) {
 			deleteMsg();
 
 			break;
+		case "/weatherf":
+			const locationF = text.split(" ").slice(1).join(" ");
+			getWeather(locationF, "F")
+				.then(async (weatherData) => {
+					handleResponse(weatherData, msg, chatId, myCache, bot, "pre").catch((err) => {
+						console.error(err);
+					});
+				})
+				.catch((err) => {
+					console.error(err);
+				});
+			break;
 		case "/weather":
 			const location = text.split(" ").slice(1).join(" ");
 			getWeather(location)
@@ -147,7 +221,7 @@ function handleMessages({ chatId, msg, text, sender }) {
 			console.log(msg.reply_to_message?.poll);
 			bot.sendMessage(msg.chat.id, `I am connected to: ${bot.options.baseApiUrl}`);
 			break;
-		/* 		case "/etymology":
+		case "/etymology":
 			let msgQuery = text.split(" ").slice(1).join(" ");
 			let lang = msgQuery.split(" ")[0];
 			if (lang.startsWith(":")) {
@@ -168,8 +242,9 @@ function handleMessages({ chatId, msg, text, sender }) {
 				.catch((err) => {
 					console.error(err);
 				});
-			break; */
+			break;
 		case "/translate":
+		case "/cis":
 		case "/trans":
 			let textMsg = text.split(" ").slice(1).join(" ");
 			let languageInfo = textMsg.split(" ")[0];
@@ -180,7 +255,7 @@ function handleMessages({ chatId, msg, text, sender }) {
 			}
 			const translateString = (textMsg.trim().length ? textMsg : msg.quote?.text || msg.reply_to_message?.text) || "";
 
-			translateShell(translateString, languageInfo)
+			translateShell(translateString.replace(/['"]/g, "\\$&"), languageInfo)
 				.then(async (response) => {
 					if (response.length == 0) {
 						bot.sendMessage();
@@ -194,7 +269,8 @@ function handleMessages({ chatId, msg, text, sender }) {
 						msg,
 						chatId,
 						myCache,
-						bot
+						bot,
+						"pre"
 					).catch((err) => {
 						console.error(err);
 					});
@@ -325,9 +401,9 @@ function translateShell(string, languagePart) {
 	});
 }
 
-function getWeather(location) {
+function getWeather(location, degreeType = "C") {
 	return new Promise((resolve, reject) => {
-		weather.find({ search: location, degreeType: "C" }, function (err, result) {
+		weather.find({ search: location, degreeType }, function (err, result) {
 			if (err) {
 				console.error(err);
 				reject();

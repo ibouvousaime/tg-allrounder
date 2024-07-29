@@ -8,6 +8,7 @@ const { createWorker } = require("tesseract.js");
 const LanguageDetect = require("languagedetect");
 const natural = require("natural");
 const { sendSimpleRequestToClaude } = require("./ai");
+const { getWorldCloudPage, getWordCloudPage, functionWords } = require("./wordcloud");
 const TfIdf = natural.TfIdf;
 const darkNatureSearchTerms = [
 	"forest+moonlight",
@@ -256,6 +257,28 @@ function getMostImportantWord(sentence) {
 	return mostImportantWord;
 }
 
+function getTopNImportantWords(sentence, n = 100) {
+	const tfidf = new TfIdf();
+	tfidf.addDocument(sentence);
+
+	const words = new Set(sentence.toLowerCase().match(/\b\w+\b/g));
+	const wordScores = [];
+
+	words.forEach((word) => {
+		if (!functionWords.has(word) && word.length >= 3) {
+			const score = tfidf.tfidf(word, 0);
+			wordScores.push({ word, score });
+		}
+	});
+
+	wordScores.sort((a, b) => b.score - a.score);
+	const topNWords = wordScores.slice(0, n).map((item) => {
+		return { text: item.word, size: item.score };
+	});
+
+	return topNWords;
+}
+
 /* async function getMostImportantWord(sentence) {
 	const mostImportantWord = (await sendSimpleRequestToClaude(`Provide a 2-word search query for an image to describe: "${sentence}".`)).content[0].text
 		.split(" ")
@@ -288,6 +311,33 @@ function removeImageBackground(buffer) {
 		}
 	});
 }
+function delay(time) {
+	return new Promise(function (resolve) {
+		setTimeout(resolve, time);
+	});
+}
+function getViewScreenshot(view, idToWaitFor) {
+	return new Promise(async (resolve, reject) => {
+		try {
+			const browser = await puppeteer.launch();
+			const page = await browser.newPage();
+			await page.setContent(view);
+			page
+				.on("console", (message) => console.log(`${message.type().substr(0, 3).toUpperCase()} ${message.text()}`))
+				.on("pageerror", ({ message }) => console.log(message))
+				.on("response", (response) => console.log(`${response.status()} ${response.url()}`))
+				.on("requestfailed", (request) => console.log(`${request.failure().errorText} ${request.url()}`));
+			if (idToWaitFor) {
+				await delay(5000);
+			}
+			const buffer = await page.screenshot({});
+			browser.close();
+			resolve(buffer);
+		} catch (err) {
+			reject(err);
+		}
+	});
+}
 
 function generateUnsplashImage(text, sender, useDefaultImages = false) {
 	return new Promise(async (resolve, reject) => {
@@ -314,13 +364,14 @@ function generateUnsplashImage(text, sender, useDefaultImages = false) {
 					}, 2000);
 				} else {
 					const chosenImage = results[Math.floor(Math.random() * results.length)];
-					const browser = await puppeteer.launch();
-					const page = await browser.newPage();
 					const view = getUnsplashView(chosenImage.largeImageURL, text, getSenderInfo(sender));
-					await page.setContent(view);
-					const buffer = await page.screenshot({});
-					browser.close();
-					resolve(buffer);
+					getViewScreenshot(view)
+						.then((output) => {
+							resolve(output);
+						})
+						.catch((err) => {
+							reject(err);
+						});
 				}
 			}
 		} catch (err) {
@@ -361,4 +412,18 @@ function doOCR(language, imageBuffer) {
 	});
 }
 
-module.exports = { removeImageBackground, generateUnsplashImage, doOCR };
+function generateWordCloud(text) {
+	return new Promise((resolve, reject) => {
+		const words = getTopNImportantWords(text);
+		const view = getWordCloudPage(words);
+		getViewScreenshot(view, "wordCloudCanvas")
+			.then((output) => {
+				resolve(output);
+			})
+			.catch((err) => {
+				reject(err);
+			});
+	});
+}
+
+module.exports = { removeImageBackground, generateUnsplashImage, doOCR, generateWordCloud };
