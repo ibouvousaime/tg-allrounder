@@ -3,7 +3,6 @@ require("dotenv").config();
 const { exec } = require("child_process");
 const NodeCache = require("node-cache");
 var weather = require("weather-js");
-const axios = require("axios");
 const { error } = require("console");
 const { removeImageBackground, generateUnsplashImage, doOCR, generateWordCloud } = require("./utils/image");
 const { sendSimpleRequestToClaude } = require("./utils/ai");
@@ -45,6 +44,9 @@ const client = new MongoClient(mongoUri, {
 });
 const db = client.db("messages");
 const collection = db.collection("messages");
+const { Convert } = require("easy-currencies");
+const { extractAndConvertToCm } = require("./utils/converter");
+const { eyeWords, reactToTelegramMessage, bannedWords, nerdwords } = require("./utils/reactions");
 
 const myCache = new NodeCache();
 bot.on("edited_message", async (msg) => {
@@ -65,6 +67,18 @@ bot.on("text", async (msg) => {
 		date: msg.date,
 		sender: [msg.from.first_name, msg.from.last_name].join(" "),
 	};
+	const measurement = extractAndConvertToCm(msg.text.split(" ").slice(1).join(" "));
+	if (measurement) {
+		bot.sendMessage(msg.chat.id, `${measurement} cm*`);
+	}
+	if (eyeWords.some((word) => msg.text.toLowerCase().includes(word))) {
+		reactToTelegramMessage(process.env.TELEGRAM_BOT_TOKEN, "👀", chatId, msg.message_id);
+	} else if (bannedWords.some((word) => msg.text.toLowerCase().includes(word)) || measurement) {
+		reactToTelegramMessage(process.env.TELEGRAM_BOT_TOKEN, "🤬", chatId, msg.message_id);
+	} else if (nerdwords.some((word) => msg.text.toLowerCase().includes(word))) {
+		reactToTelegramMessage(process.env.TELEGRAM_BOT_TOKEN, "🤓", chatId, msg.message_id);
+	}
+
 	collection.insertOne(newMessage);
 	if (text.trim()[0] != "/") return;
 	handleMessages({ chatId, text, msg, sender });
@@ -109,6 +123,13 @@ Here are the commands you can use:
 			});
 			break;
 		case "/wordcloud":
+			const currentDate = new Date();
+			const oneWeekAgo = new Date(currentDate);
+			oneWeekAgo.setDate(currentDate.getDate() - 2);
+
+			collection.deleteMany({ date: { $lt: oneWeekAgo } }).then((output) => {
+				console.log(output);
+			});
 			collection
 				.find({ chatId })
 				.sort({ date: -1 })
@@ -125,6 +146,33 @@ Here are the commands you can use:
 					});
 				});
 
+			break;
+		case "/cc":
+		case "/currencyConvert":
+			const input = msg.text.split(" ").slice(1);
+			if (input.length > 4) return;
+			const amount = Number(input[0]);
+			const currencyFrom = input[1];
+			if (!currencyFrom) {
+				handleResponse("Missing input currency. Example command : /cc 25000 AED to USD.", msg, chatId, myCache, bot, null).catch((err) => {
+					console.error(err);
+				});
+				return;
+			}
+			const currencyTo = input[2] !== "to" ? input[2] : input[3] || "USD";
+			if (Number.isFinite(amount)) {
+				Convert(amount)
+					.from(currencyFrom)
+					.to(currencyTo)
+					.then((response) => {
+						handleResponse(Math.round(response).toString(), msg, chatId, myCache, bot, null).catch((err) => {
+							console.error(err);
+						});
+					})
+					.catch((err) => {
+						console.error(err);
+					});
+			}
 			break;
 		case "/cf":
 		case "/coinflip":
@@ -218,7 +266,6 @@ Here are the commands you can use:
 				});
 			break;
 		case "/processPoll":
-			console.log(msg.reply_to_message?.poll);
 			bot.sendMessage(msg.chat.id, `I am connected to: ${bot.options.baseApiUrl}`);
 			break;
 		case "/etymology":
@@ -260,7 +307,6 @@ Here are the commands you can use:
 					if (response.length == 0) {
 						bot.sendMessage();
 					}
-					console.log({ res: response.replace(ansiEscapeRegex, "") });
 					handleResponse(
 						response
 							.replace(ansiEscapeRegex, "")
@@ -320,7 +366,7 @@ Here are the commands you can use:
 					}
 					const article = await extract(webpageURL);
 					const cleanedContent = article.content.replace(/<[^>]*>/g, "");
-					const telegramHTMLPrompt = `Reply in the telegram bot API HTML.`;
+					const telegramHTMLPrompt = ``;
 					const prompt = "Generate a tldr for this article.";
 					let request = `${cleanedContent} ${prompt}\n ${telegramHTMLPrompt}`;
 					if (repliedToMessageURL && msgQuestion.length) {
@@ -432,9 +478,7 @@ function getFormattedWeatherData(item) {
 	resultLines.push(`Conditions: ${item.current.skytext}`);
 	resultLines.push(`Observation Time: ${item.current.observationtime} on ${item.current.date}`);
 	resultLines.push(`Wind: ${item.current.winddisplay}`);
-	if (item.current.dewPt) resultLines.push(`Dew point: ${item.current.dewPt}°${item.location.degreetype}`);
-	console.log(item);
-	/* 	resultLines.push("Forecast:");
+	if (item.current.dewPt) resultLines.push(`Dew point: ${item.current.dewPt}°${item.location.degreetype}`); /* 	resultLines.push("Forecast:");
 	item.forecast.forEach((day) => {
 		resultLines.push(`  ${day.day} (${day.date}): ${day.skytextday}, ${day.low}°-${day.high}°`);
 		if (day.precip) {

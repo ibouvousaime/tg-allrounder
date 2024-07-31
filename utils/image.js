@@ -10,6 +10,7 @@ const natural = require("natural");
 const { sendSimpleRequestToClaude } = require("./ai");
 const { getWorldCloudPage, getWordCloudPage, functionWords } = require("./wordcloud");
 const TfIdf = natural.TfIdf;
+
 const darkNatureSearchTerms = [
 	"forest+moonlight",
 	"mountain+night",
