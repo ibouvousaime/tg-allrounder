@@ -132,4 +132,4 @@ dist
 tmp/**/*
 *.traineddata
 deps/*
-books/*
+books/*.txt
