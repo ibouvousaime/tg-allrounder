@@ -26,6 +26,7 @@
 		"puppeteer": "^22.13.1",
 		"tesseract.js": "^5.1.0",
 		"tgfancy": "^0.13.0",
-		"weather-js": "^2.0.0"
+		"weather-js": "^2.0.0",
+		"xml2js": "^0.6.2"
 	}
 }

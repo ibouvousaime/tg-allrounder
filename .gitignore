@@ -132,3 +132,4 @@ dist
 tmp/**/*
 *.traineddata
 deps/*
+books/*

@@ -47,6 +47,7 @@ const collection = db.collection("messages");
 const { Convert } = require("easy-currencies");
 const { extractAndConvertToCm } = require("./utils/converter");
 const { eyeWords, reactToTelegramMessage, bannedWords, nerdwords } = require("./utils/reactions");
+const { getRandomOracleMessageObj, getContext, explainContextClaude } = require("./utils/oracle");
 
 const myCache = new NodeCache();
 bot.on("edited_message", async (msg) => {
@@ -55,6 +56,11 @@ bot.on("edited_message", async (msg) => {
 	collection.updateOne({ chatId: chatId, messageId: msg.message_id }, { $set: { text: msg.text } });
 	handleMessages({ chatId, msg, text, messageID: msg.message_id });
 });
+
+function containsWord(str, word) {
+	const regex = new RegExp(`\\b${word}\\b`, "i");
+	return regex.test(str);
+}
 
 bot.on("text", async (msg) => {
 	const chatId = msg.chat.id;
@@ -67,15 +73,15 @@ bot.on("text", async (msg) => {
 		date: msg.date,
 		sender: [msg.from.first_name, msg.from.last_name].join(" "),
 	};
-	const measurement = extractAndConvertToCm(msg.text.split(" ").slice(1).join(" "));
+	const measurement = extractAndConvertToCm("something " + msg.text.split(" ").slice(1).join(" "));
 	if (measurement) {
 		bot.sendMessage(msg.chat.id, `${measurement} cm*`);
 	}
-	if (eyeWords.some((word) => msg.text.toLowerCase().includes(word))) {
+	if (eyeWords.some((word) => containsWord(msg.text.toLowerCase(), word))) {
 		reactToTelegramMessage(process.env.TELEGRAM_BOT_TOKEN, "👀", chatId, msg.message_id);
-	} else if (bannedWords.some((word) => msg.text.toLowerCase().includes(word)) || measurement) {
+	} else if (bannedWords.some((word) => containsWord(msg.text.toLowerCase(), word)) || measurement) {
 		reactToTelegramMessage(process.env.TELEGRAM_BOT_TOKEN, "🤬", chatId, msg.message_id);
-	} else if (nerdwords.some((word) => msg.text.toLowerCase().includes(word))) {
+	} else if (nerdwords.some((word) => containsWord(msg.text.toLowerCase(), word))) {
 		reactToTelegramMessage(process.env.TELEGRAM_BOT_TOKEN, "🤓", chatId, msg.message_id);
 	}
 
@@ -116,6 +122,7 @@ Here are the commands you can use:
 				console.error(err);
 			});
 			break;
+		case "/interview":
 		case "/8ball":
 			const response = getRandomElement(eightBallResponses);
 			handleResponse(response, msg, chatId, myCache, bot, null).catch((err) => {
@@ -350,6 +357,18 @@ Here are the commands you can use:
 					console.error(err);
 				});
 			}
+			break;
+		case "/oracle":
+			explainContextClaude(db.collection("books"), `@${msg.from.username}`)
+				.then((context) => {
+					handleResponse(context, msg, chatId, myCache, bot, null).catch((err) => {
+						console.error(err);
+					});
+				})
+				.catch((err) => {
+					console.error(err);
+				});
+
 			break;
 		case "/tldr":
 			const currentMessageURL = extractUrl(msg.text);

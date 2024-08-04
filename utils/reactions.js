@@ -1,6 +1,6 @@
-const eyeWords = ["kir", "seks", "31", "کیر", "cock"];
-const bannedWords = ["nigga", "repost", "onion", "bibi"];
-const nerdwords = ["linux", "code", "rust", "python"];
+const eyeWords = [];
+const bannedWords = [];
+const nerdwords = [];
 const axios = require("axios");
 
 function reactToTelegramMessage(token, reaction, chatId, messageId) {
