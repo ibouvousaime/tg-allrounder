@@ -221,7 +221,8 @@ Here are the commands you can use:
 			if (msg.quote?.text) {
 				msg.quote.text = `${msg.quote.position != 0 ? "..." : ""}${msg.quote.text}${msg.quote.position + msg.quote.text.length < msg.reply_to_message.text.length ? "..." : ""}`;
 			}
-			const messageToQuote = msg.quote?.text || msg.reply_to_message?.text;
+			const messageToQuote = (msg.quote?.text || msg.reply_to_message?.text).replace(/\n/g, "<br/>");
+			console.log(messageToQuote);
 			if (replyToMessage) {
 				generateUnsplashImage(messageToQuote, replyToMessage.from)
 					.then((buffer) => {

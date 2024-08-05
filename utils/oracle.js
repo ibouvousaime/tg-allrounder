@@ -18,10 +18,12 @@ function getRandomOracleMessageObj() {
 
 function getContext(collection, book, line) {
 	return new Promise((resolve, reject) => {
+		const lineIsDifferent = line.indexOf("[") != -1 ? line.indexOf("[") - 1 : null;
+		line = lineIsDifferent ? line.trim().substring(lineIsDifferent) : line.trim();
 		collection
 			.findOne({
 				content: {
-					$regex: line.trim().substring(10),
+					$regex: line,
 					$options: "i",
 				},
 				book,
