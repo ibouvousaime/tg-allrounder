@@ -53,9 +53,6 @@ const { extractAndConvertToCm } = require("./utils/converter");
 const { eyeWords, reactToTelegramMessage, bannedWords, nerdwords } = require("./utils/reactions");
 const { getRandomOracleMessageObj, getContext, explainContextClaude } = require("./utils/oracle");
 const { generateEmbedding, findSimilarMessages } = require("./utils/search");
-const tf = require("@tensorflow/tfjs-node");
-const use = require("@tensorflow-models/universal-sentence-encoder");
-let model = null;
 
 const myCache = new NodeCache();
 bot.on("edited_message", async (msg) => {
@@ -68,18 +65,6 @@ bot.on("edited_message", async (msg) => {
 function containsWord(str, word) {
 	const regex = new RegExp(`\\b${word}\\b`, "i");
 	return regex.test(str);
-}
-
-function getModel() {
-	return new Promise((resolve, reject) => {
-		if (model) {
-			resolve(model);
-		} else {
-			use.load().then((result) => {
-				resolve(model);
-			});
-		}
-	});
 }
 
 bot.on("text", async (msg) => {
