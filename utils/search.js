@@ -1,5 +1,3 @@
-const tf = require("@tensorflow/tfjs");
-const use = require("@tensorflow-models/universal-sentence-encoder");
 function isValidRegex(str) {
 	try {
 		new RegExp(str);
@@ -8,32 +6,35 @@ function isValidRegex(str) {
 		return false;
 	}
 }
-async function generateEmbedding(text) {
-	console.log("loading model");
-	const model = await use.load();
-	console.log("embedding text");
-	const embeddings = await model.embed([text]);
-	console.log("done embedding text");
-	return embeddings.arraySync()[0];
-}
 
-function findSimilarMessages(collection, regex) {
+function findSimilarMessages(collection, chatId, regex) {
+	/* regex = regex.replace(/[\[\]\\.^$*+?(){}|]/g, "\\$&"); */
+	console.log(regex);
 	return new Promise(async (resolve, reject) => {
 		if (isValidRegex(regex)) {
-			const result = await collection
+			await collection
 				.aggregate([
 					{
 						$match: {
 							text: {
-								regex: new RegExp(regex),
+								$regex: new RegExp(regex),
+							},
+							chatId,
+							$expr: {
+								$not: {
+									$regexMatch: {
+										input: "$text",
+										regex: "^/",
+									},
+								},
 							},
 						},
 					},
 				])
-				.limit(5)
+				.sort({ date: -1 })
+				.limit(10)
 				.toArray()
 				.then((output) => {
-					console.log(output);
 					resolve(output);
 				});
 		} else {
@@ -42,4 +43,54 @@ function findSimilarMessages(collection, regex) {
 	});
 }
 
-module.exports = { generateEmbedding, findSimilarMessages };
+function countSenders(collection, chatId, regex) {
+	/* regex = regex.replace(/[\[\]\\.^$*+?(){}|]/g, "\\$&"); */
+	return new Promise(async (resolve, reject) => {
+		if (isValidRegex(regex)) {
+			await collection
+				.aggregate([
+					{
+						$match: {
+							text: {
+								$regex: new RegExp(regex),
+							},
+							chatId,
+							$expr: {
+								$not: {
+									$regexMatch: {
+										input: "$text",
+										regex: "^/",
+									},
+								},
+							},
+						},
+					},
+					{
+						$group: {
+							_id: "$sender",
+							count: { $sum: 1 },
+						},
+					},
+					{
+						$sort: { count: -1 },
+					},
+					{
+						$limit: 10,
+					},
+				])
+				.toArray()
+				.then((output) => {
+					resolve(output);
+				})
+				.catch((err) => {
+					console.error(err);
+					reject();
+				});
+		} else {
+			console.log("not a regex", regex);
+			reject();
+		}
+	});
+}
+
+module.exports = { findSimilarMessages, countSenders };

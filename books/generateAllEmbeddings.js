@@ -1,8 +1,5 @@
 const { MongoClient, ObjectId } = require("mongodb");
-const { generateEmbedding } = require("../utils/search");
 const mongoUri = "mongodb://localhost:27017";
-const tf = require("@tensorflow/tfjs-node");
-const use = require("@tensorflow-models/universal-sentence-encoder");
 
 const client = new MongoClient(mongoUri, {
 	useNewUrlParser: true,
@@ -12,7 +9,6 @@ const client = new MongoClient(mongoUri, {
 const db = client.db("messages");
 const collection = db.collection("messages");
 async function generateAllEmbeddings() {
-	const model = await use.load();
 	collection
 		.find({})
 		.toArray()

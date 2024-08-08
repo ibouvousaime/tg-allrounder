@@ -52,7 +52,7 @@ const { Convert } = require("easy-currencies");
 const { extractAndConvertToCm } = require("./utils/converter");
 const { eyeWords, reactToTelegramMessage, bannedWords, nerdwords } = require("./utils/reactions");
 const { getRandomOracleMessageObj, getContext, explainContextClaude } = require("./utils/oracle");
-const { generateEmbedding, findSimilarMessages } = require("./utils/search");
+const { generateEmbedding, findSimilarMessages, countSenders } = require("./utils/search");
 
 const myCache = new NodeCache();
 bot.on("edited_message", async (msg) => {
@@ -101,7 +101,7 @@ bot.on("text", async (msg) => {
 		reactToTelegramMessage(process.env.TELEGRAM_BOT_TOKEN, "🤓", chatId, msg.message_id);
 	}
 	let embeddings = undefined;
-	if (msg.text) {
+	if (msg.text && !msg.text?.trim()?.startsWith("/")) {
 		/* if (!msg.text?.startsWith("/")) {
 			model
 				.embed([msg.text])
@@ -251,8 +251,7 @@ Here are the commands you can use:
 			if (msg.quote?.text) {
 				msg.quote.text = `${msg.quote.position != 0 ? "..." : ""}${msg.quote.text}${msg.quote.position + msg.quote.text.length < msg.reply_to_message.text.length ? "..." : ""}`;
 			}
-			const messageToQuote = (msg.quote?.text || msg.reply_to_message?.text).replace(/\n/g, "<br/>");
-			console.log(messageToQuote);
+			const messageToQuote = (msg.quote?.text || msg.reply_to_message?.text || msg.reply_to_message?.caption).replace(/\n/g, "<br/>");
 			if (replyToMessage) {
 				generateUnsplashImage(messageToQuote, replyToMessage.from)
 					.then((buffer) => {
@@ -315,7 +314,7 @@ Here are the commands you can use:
 			} else {
 				lang = null;
 			}
-			const etymologyQuery = (msgQuery.trim().length ? msgQuery : msg.quote?.text || msg.reply_to_message?.text) || "";
+			const etymologyQuery = (msgQuery.trim().length ? msgQuery : msg.quote?.text || msg.reply_to_message?.text || msg.reply_to_message?.caption) || "";
 
 			getWordEtymology(etymologyQuery, lang)
 				.then((response) => {
@@ -338,7 +337,7 @@ Here are the commands you can use:
 			} else {
 				languageInfo = null;
 			}
-			const translateString = (textMsg.trim().length ? textMsg : msg.quote?.text || msg.reply_to_message?.text) || "";
+			const translateString = (textMsg.trim().length ? textMsg : msg.quote?.text || msg.reply_to_message?.text || msg.reply_to_message?.caption) || "";
 
 			translateShell(translateString.replace(/['"]/g, "\\$&"), languageInfo)
 				.then(async (response) => {
@@ -401,13 +400,57 @@ Here are the commands you can use:
 				});
 
 			break;
+		case "/count":
+			/* 			if (msg.from.id == 189835675) {
+				bot.deleteMessage(chatId, msg.message_id);
+				break;
+			} */
+			const countRegex = msg.text.split(" ").slice(1)?.join(" ");
+			countSenders(db.collection("messages"), chatId, countRegex)
+				.then((results) => {
+					let textOutput = results
+						.map((element) => {
+							return `${element._id}: ${element.count} ${element.count == 1 ? "time" : "times"}`;
+						})
+						.join("\n");
+					if (textOutput.trim().length == 0) {
+						textOutput = "No results found";
+					} else {
+						textOutput = "Results : \n" + textOutput;
+					}
+					handleResponse(textOutput, msg, chatId, myCache, bot, null).catch((err) => {
+						console.error(err);
+					});
+				})
+				.catch((err) => {
+					consol.error(err);
+				});
+			break;
 		case "/regex":
 			const regex = msg.text.split(" ").slice(1)?.join(" ");
-			findSimilarMessages(db.collection("messages"), regex);
+			findSimilarMessages(db.collection("messages"), chatId, regex)
+				.then((results) => {
+					let textOutput = results
+						.map((element) => {
+							return `<a href="https://t.me/c/${element.chatId.toString().slice(4)}/${element.messageId}"> ${element.sender}: ${element.text.length > 20 ? element.text.slice(0, 20) + "..." : element.text}</a>`;
+						})
+						.join("\n");
+					if (textOutput.trim().length == 0) {
+						textOutput = "No results found";
+					} else {
+						textOutput = "Results : \n" + textOutput;
+					}
+					handleResponse(textOutput, msg, chatId, myCache, bot, null).catch((err) => {
+						console.error(err);
+					});
+				})
+				.catch((err) => {
+					consol.error(err);
+				});
 			break;
 		case "/tldr":
 			const currentMessageURL = extractUrl(msg.text);
-			const repliedToMessageURL = extractUrl(msg.reply_to_message?.text);
+			const repliedToMessageURL = extractUrl(msg.reply_to_message?.text || msg.reply_to_message?.caption);
 			const msgQuestion = msg.text.split(" ").slice(1).join(" ").trim();
 			let webpageURL = currentMessageURL || repliedToMessageURL;
 			import("@extractus/article-extractor").then(async ({ extract }) => {
