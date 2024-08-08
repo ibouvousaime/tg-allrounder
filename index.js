@@ -9,7 +9,11 @@ const { sendSimpleRequestToClaude } = require("./utils/ai");
 const fs = require("fs");
 const { getWordEtymology } = require("./utils/dictionary");
 const bot = new Tgfancy(process.env.TELEGRAM_BOT_TOKEN, {
-	polling: true,
+	polling: {
+		params: {
+			allowed_updates: ["message", "message_reaction"],
+		},
+	},
 	baseApiUrl: "http://localhost:8081",
 });
 const { MongoClient } = require("mongodb");
@@ -48,6 +52,10 @@ const { Convert } = require("easy-currencies");
 const { extractAndConvertToCm } = require("./utils/converter");
 const { eyeWords, reactToTelegramMessage, bannedWords, nerdwords } = require("./utils/reactions");
 const { getRandomOracleMessageObj, getContext, explainContextClaude } = require("./utils/oracle");
+const { generateEmbedding, findSimilarMessages } = require("./utils/search");
+const tf = require("@tensorflow/tfjs-node");
+const use = require("@tensorflow-models/universal-sentence-encoder");
+let model = null;
 
 const myCache = new NodeCache();
 bot.on("edited_message", async (msg) => {
@@ -62,9 +70,32 @@ function containsWord(str, word) {
 	return regex.test(str);
 }
 
+function getModel() {
+	return new Promise((resolve, reject) => {
+		if (model) {
+			resolve(model);
+		} else {
+			use.load().then((result) => {
+				resolve(model);
+			});
+		}
+	});
+}
+
 bot.on("text", async (msg) => {
 	const chatId = msg.chat.id;
 	const text = msg.text;
+
+	if (msg.chat.type == "group" || msg.chat.type == "supergroup") {
+		const triggerWords = process.env.TRIGGER_WORDS?.split(" ") || [];
+		if (triggerWords.some((word) => text.toLowerCase().includes(word.toLowerCase()))) {
+			await bot.sendMessage(process.env.LogChat, `https://t.me/c/${msg.chat.id.toString().slice(4)}/${msg.message_id}`);
+			await bot.forwardMessage(process.env.LogChat, chatId, msg.message_id);
+		}
+	}
+	/* if (text.toLowerCase().includes("Ibou")) {
+		bot.forwardMessage()
+	} */
 	const sender = msg.from;
 	const newMessage = {
 		chatId: chatId,
@@ -84,8 +115,22 @@ bot.on("text", async (msg) => {
 	} else if (nerdwords.some((word) => containsWord(msg.text.toLowerCase(), word))) {
 		reactToTelegramMessage(process.env.TELEGRAM_BOT_TOKEN, "🤓", chatId, msg.message_id);
 	}
-
-	collection.insertOne(newMessage);
+	let embeddings = undefined;
+	if (msg.text) {
+		/* if (!msg.text?.startsWith("/")) {
+			model
+				.embed([msg.text])
+				.then((embeddings) => {
+					collection.insertOne({ ...newMessage, embeddings: embeddings?.arraySync()[0] });
+				})
+				.catch((err) => {
+					console.log(err)
+					collection.insertOne({ ...newMessage });
+				});
+		} else { */
+		collection.insertOne({ ...newMessage });
+		/* } */
+	}
 	if (text.trim()[0] != "/") return;
 	handleMessages({ chatId, text, msg, sender });
 });
@@ -370,6 +415,10 @@ Here are the commands you can use:
 					console.error(err);
 				});
 
+			break;
+		case "/regex":
+			const regex = msg.text.split(" ").slice(1)?.join(" ");
+			findSimilarMessages(db.collection("messages"), regex);
 			break;
 		case "/tldr":
 			const currentMessageURL = extractUrl(msg.text);
