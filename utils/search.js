@@ -9,15 +9,18 @@ function isValidRegex(str) {
 
 function findSimilarMessages(collection, chatId, regex) {
 	/* regex = regex.replace(/[\[\]\\.^$*+?(){}|]/g, "\\$&"); */
-	console.log(regex);
 	return new Promise(async (resolve, reject) => {
+		if (regex.trim().length < 2) {
+			resolve([]);
+			return;
+		}
 		if (isValidRegex(regex)) {
 			await collection
 				.aggregate([
 					{
 						$match: {
 							text: {
-								$regex: new RegExp(regex),
+								$regex: new RegExp(regex, "i"),
 							},
 							chatId,
 							$expr: {
@@ -52,7 +55,7 @@ function countSenders(collection, chatId, regex) {
 					{
 						$match: {
 							text: {
-								$regex: new RegExp(regex),
+								$regex: new RegExp(regex, "i"),
 							},
 							chatId,
 							$expr: {

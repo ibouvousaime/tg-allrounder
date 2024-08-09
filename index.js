@@ -4,7 +4,7 @@ const { exec } = require("child_process");
 const NodeCache = require("node-cache");
 var weather = require("weather-js");
 const { error } = require("console");
-const { removeImageBackground, generateUnsplashImage, doOCR, generateWordCloud } = require("./utils/image");
+const { removeImageBackground, generateUnsplashImage, doOCR, generateWordCloud, resizeImageBuffer, isEmojiString } = require("./utils/image");
 const { sendSimpleRequestToClaude } = require("./utils/ai");
 const fs = require("fs");
 const { getWordEtymology } = require("./utils/dictionary");
@@ -61,12 +61,10 @@ bot.on("edited_message", async (msg) => {
 	collection.updateOne({ chatId: chatId, messageId: msg.message_id }, { $set: { text: msg.text } });
 	handleMessages({ chatId, msg, text, messageID: msg.message_id });
 });
-
 function containsWord(str, word) {
 	const regex = new RegExp(`\\b${word}\\b`, "i");
 	return regex.test(str);
 }
-
 bot.on("text", async (msg) => {
 	const chatId = msg.chat.id;
 	const text = msg.text;
@@ -364,6 +362,46 @@ Here are the commands you can use:
 			break;
 		case "/removebg":
 		case "/rmbg":
+		case "/createSticker":
+		case "/addsticker":
+			if (msg.reply_to_message && msg.reply_to_message.photo) {
+				const emojis = msg.text.split(" ").slice(1).join(" ").replace(/\s+/g, "");
+				if (!isEmojiString(emojis) && emojis.trim().length == 0) {
+					handleResponse("Correct usage: /addsticker <emojis>. Example : /addsticker 💧🍉.", msg, chatId, myCache, bot, null).catch((err) => {
+						console.error(err);
+					});
+					break;
+				}
+				const photoArray = msg.reply_to_message.photo;
+				const highestQualityPhoto = photoArray[photoArray.length - 1];
+				bot.getFile(highestQualityPhoto.file_id).then(async (file) => {
+					const filePath = file.file_path;
+					const chatId = msg.chat.id;
+					const resizedImage = await resizeImageBuffer(filePath);
+					const stickerPackName = `hummus${chatId.toString().slice(4)}_by_${process.env.BOT_USERNAME}`;
+					bot
+						.addStickerToSet(process.env.STICKER_OWNER, stickerPackName, resizedImage, emojis)
+						.then(() => {
+							handleResponse("Done", msg, chatId, myCache, bot, null).catch((err) => {
+								console.error(err);
+							});
+						})
+						.catch((err) => {
+							bot
+								.createNewStickerSet(process.env.STICKER_OWNER, stickerPackName, `${msg.chat.title}'s Stickers`, resizedImage, emojis)
+								.then(() => {
+									bot.setChatStickerSet(chatId, stickerPackName);
+									handleResponse(`New sticker pack created t.me/addstickers/${stickerPackName}`, msg, chatId, myCache, bot, null).catch((err) => {
+										console.error(err);
+									});
+								})
+								.catch((err) => {
+									console.error(err);
+								});
+						});
+				});
+			}
+			break;
 		case "/removebackground":
 			if (msg.reply_to_message && msg.reply_to_message.photo) {
 				const chatId = msg.chat.id;
