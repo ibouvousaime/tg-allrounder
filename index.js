@@ -7,6 +7,7 @@ const { error } = require("console");
 const { removeImageBackground, generateUnsplashImage, doOCR, generateWordCloud, resizeImageBuffer, isEmojiString } = require("./utils/image");
 const { sendSimpleRequestToClaude } = require("./utils/ai");
 const fs = require("fs");
+const math = require("mathjs");
 const { getWordEtymology } = require("./utils/dictionary");
 const bot = new Tgfancy(process.env.TELEGRAM_BOT_TOKEN, {
 	polling: {
@@ -52,7 +53,7 @@ const { Convert } = require("easy-currencies");
 const { extractAndConvertToCm } = require("./utils/converter");
 const { eyeWords, reactToTelegramMessage, bannedWords, nerdwords } = require("./utils/reactions");
 const { getRandomOracleMessageObj, getContext, explainContextClaude } = require("./utils/oracle");
-const { generateEmbedding, findSimilarMessages, countSenders } = require("./utils/search");
+const { generateEmbedding, findSimilarMessages, countSenders, replaceText } = require("./utils/search");
 
 const myCache = new NodeCache();
 bot.on("edited_message", async (msg) => {
@@ -111,7 +112,9 @@ bot.on("text", async (msg) => {
 					collection.insertOne({ ...newMessage });
 				});
 		} else { */
-		collection.insertOne({ ...newMessage });
+		collection.insertOne({ ...newMessage }).catch((err) => {
+			console.error(err);
+		});
 		/* } */
 	}
 	if (text.trim()[0] != "/") return;
@@ -181,6 +184,13 @@ Here are the commands you can use:
 					});
 				});
 
+			break;
+		case "/calc":
+			const expression = msg.text.split(" ").slice(1).join(" ");
+			let result = math.evaluate(expression);
+			handleResponse(`${result}`, msg, chatId, myCache, bot, null).catch((err) => {
+				console.error(err);
+			});
 			break;
 		case "/cc":
 		case "/currencyConvert":
@@ -438,11 +448,27 @@ Here are the commands you can use:
 				});
 
 			break;
+		case "/replace":
+			const inputRequest = msg.text.split(" ").slice(1);
+			const inputText = msg.quote?.text || msg.reply_to_message?.text || msg.reply_to_message?.caption;
+			if (inputRequest.length >= 2 && inputText?.trim()?.length > 0) {
+				const inputRegex = inputRequest[0];
+				const textToSubWith = inputRequest.slice(1).join(" ");
+				const result = replaceText(inputText, inputRegex, textToSubWith, "i");
+				handleResponse(result, msg, chatId, myCache, bot, null).catch((err) => {
+					console.error(err);
+				});
+			} else {
+				handleResponse(`Missing arguments, it's /replace <input regex> <text to replace stuff with>`, msg, chatId, myCache, bot, null).catch((err) => {
+					console.error(err);
+				});
+			}
+			break;
 		case "/count":
-			/* 			if (msg.from.id == 189835675) {
+			if (msg.from.id == 189835675) {
 				bot.deleteMessage(chatId, msg.message_id);
 				break;
-			} */
+			}
 			const countRegex = msg.text.split(" ").slice(1)?.join(" ");
 			countSenders(db.collection("messages"), chatId, countRegex)
 				.then((results) => {

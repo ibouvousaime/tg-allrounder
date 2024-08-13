@@ -95,5 +95,24 @@ function countSenders(collection, chatId, regex) {
 		}
 	});
 }
+const OnigScanner = require("oniguruma").OnigScanner;
 
-module.exports = { findSimilarMessages, countSenders };
+function replaceText(originalString, regexPattern, replacementText) {
+	try {
+		const scanner = new OnigScanner([regexPattern]);
+		let result = originalString;
+		let currentIndex = 0;
+		let match;
+
+		while ((match = scanner.findNextMatchSync(result, currentIndex))) {
+			result = result.substring(0, match.captureIndices[0].start) + replacementText + result.substring(match.captureIndices[0].end);
+			currentIndex = match.captureIndices[0].start + replacementText.length;
+		}
+
+		return result;
+	} catch (err) {
+		return `cant parse this regex, ${regexPattern}`;
+	}
+}
+
+module.exports = { findSimilarMessages, countSenders, replaceText };
