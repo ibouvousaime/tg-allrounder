@@ -87,13 +87,24 @@ bot.on("text", async (msg) => {
 	if (tweetId) {
 		if (msg.link_preview_options?.is_disabled) {
 			const tweetData = await extractTweet(msg.text);
-			tweetData.media?.forEach((media) => {
-				if (media.type == "video") {
-					bot.sendVideo(chatId, media.url, { caption: tweetData.fullText });
-				} else if (media.type == "photo") {
-					bot.sendPhoto(chatId, media.url, { caption: tweetData.fullText });
-				}
-			});
+			if (tweetData.media?.length == 1) {
+				tweetData.media?.forEach((media) => {
+					if (media.type == "video") {
+						bot.sendVideo(chatId, media.url, { caption: tweetData.fullText });
+					} else if (media.type == "photo") {
+						bot.sendPhoto(chatId, media.url, { caption: tweetData.fullText });
+					}
+				});
+			}
+			if (tweetData.media?.length > 1 && tweetData.media?.length < 10) {
+				const mediaData = tweetData.media
+					.filter((media) => media.type == "photo" || media.type == "video")
+					.map((media) => {
+						return { type: media.type, media: media.url };
+					});
+				bot.sendMediaGroup(chatId, mediaData);
+				bot.sendMessage(chatId, tweetData.fullText);
+			}
 			if (!tweetData.media?.length) {
 				bot.sendMessage(chatId, tweetData.fullText);
 			}
