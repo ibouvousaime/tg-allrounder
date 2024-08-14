@@ -54,6 +54,7 @@ const { extractAndConvertToCm } = require("./utils/converter");
 const { eyeWords, reactToTelegramMessage, bannedWords, nerdwords } = require("./utils/reactions");
 const { getRandomOracleMessageObj, getContext, explainContextClaude } = require("./utils/oracle");
 const { generateEmbedding, findSimilarMessages, countSenders, replaceText } = require("./utils/search");
+const { extractTweetId, extractTweet } = require("./utils/bird");
 
 const myCache = new NodeCache();
 bot.on("edited_message", async (msg) => {
@@ -82,6 +83,22 @@ function getAdminsIds(chatId) {
 bot.on("text", async (msg) => {
 	const chatId = msg.chat.id;
 	const text = msg.text;
+	const tweetId = extractTweetId(msg.text);
+	if (tweetId) {
+		if (msg.link_preview_options?.is_disabled) {
+			const tweetData = await extractTweet(msg.text);
+			tweetData.media?.forEach((media) => {
+				if (media.type == "video") {
+					bot.sendVideo(chatId, media.url, { caption: tweetData.fullText });
+				} else if (media.type == "photo") {
+					bot.sendPhoto(chatId, media.url, { caption: tweetData.fullText });
+				}
+			});
+			if (!tweetData.media?.length) {
+				bot.sendMessage(chatId, tweetData.fullText);
+			}
+		}
+	}
 	if (msg.chat.type == "group" || msg.chat.type == "supergroup") {
 		const triggerWords = process.env.TRIGGER_WORDS?.split(" ") || [];
 		if (triggerWords.some((word) => text.toLowerCase().includes(word.toLowerCase()))) {
@@ -177,11 +194,14 @@ Here are the commands you can use:
 			const oneWeekAgo = new Date(currentDate);
 			oneWeekAgo.setDate(currentDate.getDate() - 2);
 
-			collection.deleteMany({ date: { $lt: oneWeekAgo } }).then((output) => {
-				console.log(output);
-			}).catch(err=> {
-				console.error(err)
-			})
+			collection
+				.deleteMany({ date: { $lt: oneWeekAgo } })
+				.then((output) => {
+					console.log(output);
+				})
+				.catch((err) => {
+					console.error(err);
+				});
 			collection
 				.find({ chatId })
 				.sort({ date: -1 })
