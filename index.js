@@ -96,7 +96,7 @@ bot.on("text", async (msg) => {
 					}
 				});
 			}
-			if (tweetData.media?.length > 1 && tweetData.media?.length < 10) {
+			if (tweetData.media?.length > 1 && tweetData.media?.length <= 10) {
 				const mediaData = tweetData.media
 					.filter((media) => media.type == "photo" || media.type == "video")
 					.map((media) => {
