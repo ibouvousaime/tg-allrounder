@@ -66,10 +66,22 @@ function containsWord(str, word) {
 	const regex = new RegExp(`\\b${word}\\b`, "i");
 	return regex.test(str);
 }
+function getAdminsIds(chatId) {
+	return new Promise(async (resolve, reject) => {
+		try {
+			const admins = await bot.getChatAdministrators(chatId);
+			const adminIDs = admins.map((admin) => admin.user.id);
+			resolve(adminIDs);
+		} catch (err) {
+			console.error(err);
+			reject();
+		}
+	});
+}
+
 bot.on("text", async (msg) => {
 	const chatId = msg.chat.id;
 	const text = msg.text;
-
 	if (msg.chat.type == "group" || msg.chat.type == "supergroup") {
 		const triggerWords = process.env.TRIGGER_WORDS?.split(" ") || [];
 		if (triggerWords.some((word) => text.toLowerCase().includes(word.toLowerCase()))) {
@@ -88,7 +100,7 @@ bot.on("text", async (msg) => {
 		date: msg.date,
 		sender: [msg.from.first_name, msg.from.last_name].join(" "),
 	};
-	const measurement = extractAndConvertToCm("something " + msg.text.split(" ").slice(1).join(" "));
+	/* 	const measurement = extractAndConvertToCm("something " + msg.text.split(" ").slice(1).join(" "));
 	if (measurement) {
 		bot.sendMessage(msg.chat.id, `${measurement} cm*`);
 	}
@@ -98,7 +110,7 @@ bot.on("text", async (msg) => {
 		reactToTelegramMessage(process.env.TELEGRAM_BOT_TOKEN, "🤬", chatId, msg.message_id);
 	} else if (nerdwords.some((word) => containsWord(msg.text.toLowerCase(), word))) {
 		reactToTelegramMessage(process.env.TELEGRAM_BOT_TOKEN, "🤓", chatId, msg.message_id);
-	}
+	} */
 	let embeddings = undefined;
 	if (msg.text && !msg.text?.trim()?.startsWith("/")) {
 		/* if (!msg.text?.startsWith("/")) {
@@ -167,7 +179,9 @@ Here are the commands you can use:
 
 			collection.deleteMany({ date: { $lt: oneWeekAgo } }).then((output) => {
 				console.log(output);
-			});
+			}).catch(err=> {
+				console.error(err)
+			})
 			collection
 				.find({ chatId })
 				.sort({ date: -1 })
@@ -372,6 +386,15 @@ Here are the commands you can use:
 			break;
 		case "/removebg":
 		case "/rmbg":
+		case "/deleteSticker":
+			if (!getAdminsIds(chatId).includes(msg.from.id)) {
+				bot.sendMessage("no, ur not my dad");
+			}
+			if (msg.reply_to_message?.sticker) {
+				bot.deleteStickerFromSet(msg.reply_to_message?.sticker?.file_id).then(() => {
+					bot.sendMessage(chatId, "Sticker deleted");
+				});
+			}
 		case "/createSticker":
 		case "/addsticker":
 			if (msg.reply_to_message && msg.reply_to_message.photo) {
