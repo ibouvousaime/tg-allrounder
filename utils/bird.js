@@ -1,6 +1,7 @@
 const testurl = "https://x.com/islaminchina/status/1823459291711578224?t=z45p1hf3ScMlszuqHp35PA&s=19";
 const { Rettiwt } = require("rettiwt-api");
 const rettiwt = new Rettiwt();
+const instagramDl = require("@sasmeee/igdl");
 
 function extractTweetId(url) {
 	const regex = /status\/(\d+)/;
@@ -15,19 +16,41 @@ function extractTweetId(url) {
 }
 
 function extractTweet(url) {
-    return new Promise((resolve, reject)=> {
-        const tweetId = extractTweetId(url);
-        rettiwt.tweet
-            .details(tweetId)
-            .then((res) => {
-                resolve(res)
-            })
-            .catch((err) => {
-                console.error(err)
-                reject()
-            });
-   
-    })
+	return new Promise((resolve, reject) => {
+		const tweetId = extractTweetId(url);
+		rettiwt.tweet
+			.details(tweetId)
+			.then((res) => {
+				resolve(res);
+			})
+			.catch((err) => {
+				console.error(err);
+				reject();
+			});
+	});
 }
 
-module.exports = { extractTweet, extractTweetId };
+function extractInstaLinks(text) {
+	const reelRegex = /(?:https?:\/\/)?(?:www\.)?instagram\.com\/reel\/[a-zA-Z0-9_-]+\/?/g;
+	const reelLinks = text.match(reelRegex);
+	return reelLinks || [];
+}
+
+function getInstagramVideoLink(text) {
+	return new Promise(async (resolve, reject) => {
+		try {
+			const links = extractInstaLinks(text);
+			console.log(links);
+			let output = [];
+			for (let link of links) {
+				console.log(link);
+				output.push(await instagramDl(link));
+			}
+			resolve(output);
+		} catch (err) {
+			reject(err);
+		}
+	});
+}
+
+module.exports = { extractTweet, extractTweetId, getInstagramVideoLink };

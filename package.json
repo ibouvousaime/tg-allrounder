@@ -14,6 +14,7 @@
 	"dependencies": {
 		"@anthropic-ai/sdk": "^0.24.3",
 		"@extractus/article-extractor": "^8.0.10",
+		"@sasmeee/igdl": "^1.0.0",
 		"@tensorflow-models/universal-sentence-encoder": "^1.3.3",
 		"@tensorflow/tfjs": "^4.20.0",
 		"@tensorflow/tfjs-node": "^4.20.0",
