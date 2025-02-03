@@ -511,6 +511,17 @@ Here are the commands you can use:
 					});
 				}
 				break;
+			case "/dream":
+				let inlineDream = text.split(" ").slice(1).join(" ");
+
+				const dreamData = inlineDream + (msg.quote?.text || msg.reply_to_message?.text || msg.reply_to_message?.caption || "");
+				if (!dreamData.trim().length) return;
+				sendSimpleRequestToClaude(`Pretend you're a dream interpreter and interpret this dream: ${dreamData}`).then((response) => {
+					handleResponse(response.content[0].text, msg, chatId, myCache, bot, null).catch((err) => {
+						console.error(err);
+					});
+				});
+				break;
 			case "/oracle":
 				let target = text.split(" ").slice(1).join(" ");
 
