@@ -47,11 +47,12 @@ const client = new MongoClient(mongoUri, {
 	useNewUrlParser: true,
 	useUnifiedTopology: true,
 });
+
 const db = client.db("messages");
 const collection = db.collection("messages");
 const { Convert } = require("easy-currencies");
 const { extractAndConvertToCm } = require("./utils/converter");
-const { eyeWords, reactToTelegramMessage, bannedWords, nerdwords } = require("./utils/reactions");
+const { eyeWords, reactToTelegramMessage, bannedWords, nerdwords, sendPoll } = require("./utils/reactions");
 const { getRandomOracleMessageObj, getContext, explainContextClaude } = require("./utils/oracle");
 const { generateEmbedding, findSimilarMessages, countSenders, replaceText } = require("./utils/search");
 const { extractTweetId, extractTweet, getInstagramVideoLink } = require("./utils/bird");
@@ -391,6 +392,15 @@ Here are the commands you can use:
 						console.error(err);
 					});
 				break;
+			case "/invite":
+				const invite = text.split(" ").slice(1).join(" ");
+				sendPoll(msg.chat.id, `Invite ${invite} to the chat?`, [{ text: "Yes" }, { text: "No" }], true);
+				break;
+			case "/voteban":
+				const victim = text.split(" ").slice(1).join(" ");
+				sendPoll(msg.chat.id, `Ban ${victim}?`, [{ text: "Yes" }, { text: "No" }], false);
+				break;
+
 			case "/translate":
 			case "/cis":
 			case "/trans":
@@ -502,7 +512,9 @@ Here are the commands you can use:
 				}
 				break;
 			case "/oracle":
-				explainContextClaude(db.collection("books"), `@${msg.from.username}`)
+				let target = text.split(" ").slice(1).join(" ");
+
+				explainContextClaude(db.collection("books"), `${target?.length > 0 ? target : "@" + msg.from.username}`)
 					.then((context) => {
 						handleResponse(context, msg, chatId, myCache, bot, null).catch((err) => {
 							console.error(err);
