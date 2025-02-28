@@ -54,7 +54,7 @@ const { Convert } = require("easy-currencies");
 const { extractAndConvertToCm } = require("./utils/converter");
 const { eyeWords, reactToTelegramMessage, bannedWords, nerdwords, sendPoll } = require("./utils/reactions");
 const { getRandomOracleMessageObj, getContext, explainContextClaude } = require("./utils/oracle");
-const { generateEmbedding, findSimilarMessages, countSenders, replaceText } = require("./utils/search");
+const { generateEmbedding, findSimilarMessages, countSenders } = require("./utils/search");
 const { extractTweetId, extractTweet, getInstagramVideoLink } = require("./utils/bird");
 
 const myCache = new NodeCache();
@@ -460,7 +460,10 @@ Here are the commands you can use:
 					const photoArray = msg.reply_to_message.photo;
 					const highestQualityPhoto = photoArray[photoArray.length - 1];
 					bot.getFile(highestQualityPhoto.file_id).then(async (file) => {
-						const filePath = file.file_path;
+						console.log(file);
+						const homedir = require("os").homedir();
+
+						const filePath = `${homedir}/${process.env.TELEGRAM_BOT_API_PREFIX}/` + file.file_path;
 						const chatId = msg.chat.id;
 						const resizedImage = await resizeImageBuffer(filePath);
 						const stickerPackName = `hummus${chatId.toString().slice(4)}_by_${process.env.BOT_USERNAME}`;
@@ -535,22 +538,6 @@ Here are the commands you can use:
 						console.error(err);
 					});
 
-				break;
-			case "/replace":
-				const inputRequest = msg.text.split(" ").slice(1);
-				const inputText = msg.quote?.text || msg.reply_to_message?.text || msg.reply_to_message?.caption;
-				if (inputRequest.length >= 2 && inputText?.trim()?.length > 0) {
-					const inputRegex = inputRequest[0];
-					const textToSubWith = inputRequest.slice(1).join(" ");
-					const result = replaceText(inputText, inputRegex, textToSubWith, "i");
-					handleResponse(result, msg, chatId, myCache, bot, null).catch((err) => {
-						console.error(err);
-					});
-				} else {
-					handleResponse(`Missing arguments, it's /replace <input regex> <text to replace stuff with>`, msg, chatId, myCache, bot, null).catch((err) => {
-						console.error(err);
-					});
-				}
 				break;
 			case "/addtoglossary":
 				const glossaryCollection = db.collection("glossary");

@@ -439,6 +439,8 @@ function generateWordCloud(text) {
 async function resizeImageBuffer(imageLink) {
 	return new Promise(async (resolve, reject) => {
 		try {
+
+			console.log(imageLink, "link 2")
 			const inputBuffer = fs.readFileSync(imageLink);
 			const image = sharp(inputBuffer);
 			const metadata = await image.metadata();
