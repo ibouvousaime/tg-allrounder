@@ -436,12 +436,9 @@ function generateWordCloud(text) {
 	});
 }
 
-async function resizeImageBuffer(imageLink) {
+async function resizeImageBuffer(inputBuffer) {
 	return new Promise(async (resolve, reject) => {
 		try {
-
-			console.log(imageLink, "link 2")
-			const inputBuffer = fs.readFileSync(imageLink);
 			const image = sharp(inputBuffer);
 			const metadata = await image.metadata();
 			const { width, height } = metadata;

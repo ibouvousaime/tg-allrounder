@@ -15,7 +15,6 @@ const bot = new Tgfancy(process.env.TELEGRAM_BOT_TOKEN, {
 			allowed_updates: ["message", "message_reaction"],
 		},
 	},
-	baseApiUrl: "http://localhost:8081",
 });
 const { MongoClient } = require("mongodb");
 const ansiEscapeRegex = /\x1B\[[0-?]*[ -/]*[@-~]/g;
@@ -289,8 +288,9 @@ Here are the commands you can use:
 					const photoArray = msg.reply_to_message.photo;
 					const highestQualityPhoto = photoArray[photoArray.length - 1];
 					bot.getFile(highestQualityPhoto.file_id).then(async (file) => {
-						const filePath = file.file_path;
-						const imageData = await fs.readFileSync(filePath);
+						const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
+						const response = await fetch(fileUrl);
+						const imageData = await response.buffer();
 						const output = await doOCR(language, imageData);
 						handleResponse(
 							output.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;"),
@@ -311,7 +311,9 @@ Here are the commands you can use:
 					replyToMessage = { from: msg.reply_to_message?.forward_from };
 				}
 				if (msg.reply_to_message?.forward_origin) {
-					replyToMessage = { from: { first_name: msg.reply_to_message?.forward_origin?.sender_user_name } };
+					replyToMessage = {
+						from: { first_name: msg.reply_to_message?.forward_origin?.sender_user_name || msg.reply_to_message?.forward_origin?.sender_user?.first_name },
+					};
 				}
 				if (msg.quote?.text) {
 					msg.quote.text = `${msg.quote.position != 0 ? "..." : ""}${msg.quote.text}${msg.quote.position + msg.quote.text.length < msg.reply_to_message.text.length ? "..." : ""}`;
@@ -401,7 +403,6 @@ Here are the commands you can use:
 				sendPoll(msg.chat.id, `Ban ${victim}?`, [{ text: "Yes" }, { text: "No" }], false);
 				break;
 
-			case "/translate":
 			case "/cis":
 			case "/trans":
 				let textMsg = text.split(" ").slice(1).join(" ");
@@ -460,12 +461,12 @@ Here are the commands you can use:
 					const photoArray = msg.reply_to_message.photo;
 					const highestQualityPhoto = photoArray[photoArray.length - 1];
 					bot.getFile(highestQualityPhoto.file_id).then(async (file) => {
-						console.log(file);
-						const homedir = require("os").homedir();
-
-						const filePath = `${homedir}/${process.env.TELEGRAM_BOT_API_PREFIX}/` + file.file_path;
+						const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
 						const chatId = msg.chat.id;
-						const resizedImage = await resizeImageBuffer(filePath);
+						const imageResponse = await fetch(fileUrl);
+						const arrayBuffer = await imageResponse.arrayBuffer();
+						const imageBuffer = Buffer.from(arrayBuffer);
+						const resizedImage = await resizeImageBuffer(imageBuffer);
 						const stickerPackName = `hummus${chatId.toString().slice(4)}_by_${process.env.BOT_USERNAME}`;
 						bot
 							.addStickerToSet(process.env.STICKER_OWNER, stickerPackName, resizedImage, emojis)
@@ -490,7 +491,7 @@ Here are the commands you can use:
 					});
 				}
 				break;
-			case "/removebackground":
+			/* case "/removebackground":
 				if (msg.reply_to_message && msg.reply_to_message.photo) {
 					const chatId = msg.chat.id;
 					const photoArray = msg.reply_to_message.photo;
@@ -513,7 +514,7 @@ Here are the commands you can use:
 						console.error(err);
 					});
 				}
-				break;
+				break; */
 			case "/dream":
 				let inlineDream = text.split(" ").slice(1).join(" ");
 
