@@ -290,8 +290,8 @@ Here are the commands you can use:
 					bot.getFile(highestQualityPhoto.file_id).then(async (file) => {
 						const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
 						const response = await fetch(fileUrl);
-						const imageData = await response.buffer();
-						const output = await doOCR(language, imageData);
+						const imageData = await response.arrayBuffer();
+						const output = await doOCR(language, Buffer.from(imageData));
 						handleResponse(
 							output.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;"),
 							msg,
