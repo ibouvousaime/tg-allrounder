@@ -70,8 +70,8 @@ function extractXMLBookContent(filePath, bookName) {
 extractXMLBookContent("odyssey.xml", "Odyssey");
 extractXMLBookContent("iliad.xml", "Iliad");
 
-extractBookContent("odyssey.mb.txt", "Odyssey");
-extractBookContent("iliad.mb.txt", "Iliad");
+/* extractBookContent("odyssey.mb.txt", "Odyssey");
+extractBookContent("iliad.mb.txt", "Iliad"); */
 
 function romanToNumber(roman) {
 	const romanMap = {
