@@ -1,4 +1,3 @@
-const testurl = "https://x.com/islaminchina/status/1823459291711578224?t=z45p1hf3ScMlszuqHp35PA&s=19";
 const { Rettiwt } = require("rettiwt-api");
 const rettiwt = new Rettiwt();
 const instagramDl = require("@sasmeee/igdl");
