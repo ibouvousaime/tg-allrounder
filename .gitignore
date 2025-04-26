@@ -133,3 +133,4 @@ tmp/**/*
 *.traineddata
 deps/*
 books/*.txt
+.categories.js
