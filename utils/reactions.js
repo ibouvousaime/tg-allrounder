@@ -2,6 +2,7 @@ const eyeWords = [];
 const bannedWords = [];
 const nerdwords = [];
 const axios = require("axios");
+const he = require("he");
 
 function reactToTelegramMessage(token, reaction, chatId, messageId) {
 	const params = new URLSearchParams({
@@ -19,16 +20,35 @@ function reactToTelegramMessage(token, reaction, chatId, messageId) {
 		});
 }
 
-const sendPoll = async (chatId, question, options, anon, botToken = process.env.TELEGRAM_BOT_TOKEN) => {
+const sendPoll = async (
+	chatId,
+	question,
+	options,
+	anon,
+	botToken = process.env.TELEGRAM_BOT_TOKEN,
+	open_period = null,
+	quizz = false,
+	correct_answer = null
+) => {
 	try {
 		const url = `https://api.telegram.org/bot${botToken}/sendPoll`;
-
-		const response = await axios.post(url, {
+		console.log({ question, options, quizz, correct_answer });
+		const payload = {
 			chat_id: chatId,
-			question: question,
-			options: JSON.stringify(options),
+			question: he.decode(question),
+			options: options.map((option) => he.decode(option.text || option)), // Support both strings and objects with { text }
 			is_anonymous: anon,
-		});
+		};
+		if (open_period !== null) {
+			payload.open_period = open_period; // set it here
+		}
+		if (quizz) {
+			payload.type = "quiz";
+			if (correct_answer !== null) {
+				payload.correct_option_id = correct_answer;
+			}
+		}
+		const response = await axios.post(url, payload);
 
 		console.log("Poll sent successfully:", response.data);
 		return response.data;

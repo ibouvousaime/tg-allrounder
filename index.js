@@ -55,6 +55,7 @@ const { eyeWords, reactToTelegramMessage, bannedWords, nerdwords, sendPoll } = r
 const { getRandomOracleMessageObj, getContext, explainContextClaude } = require("./utils/oracle");
 const { generateEmbedding, findSimilarMessages, countSenders } = require("./utils/search");
 const { extractTweetId, extractTweet, getInstagramVideoLink } = require("./utils/bird");
+const { getAndSendRandomQuestion } = require("./utils/trivia");
 
 const myCache = new NodeCache();
 bot.on("edited_message", async (msg) => {
@@ -193,7 +194,6 @@ Here are the commands you can use:
 
 /coinflip - Flip a coin. Use <code>/coinflip</code> to flip a virtual coin and get heads or tails.
 
-/removebackground - Remove the background from an image. Reply to an image with <code>/removebackground</code> to get a version of the image with the background removed.
 
 /ocr - Perform Optical Character Recognition (OCR). Reply to an image with <code>/ocr</code> to extract text from the image.
 
@@ -491,30 +491,6 @@ Here are the commands you can use:
 					});
 				}
 				break;
-			/* case "/removebackground":
-				if (msg.reply_to_message && msg.reply_to_message.photo) {
-					const chatId = msg.chat.id;
-					const photoArray = msg.reply_to_message.photo;
-					const highestQualityPhoto = photoArray[photoArray.length - 1];
-					bot.getFile(highestQualityPhoto.file_id).then(async (file) => {
-						const filePath = file.file_path;
-						const imageData = await fs.readFileSync(filePath);
-						const result = await removeImageBackground(imageData);
-						const fileOpts = {
-							reply_to_message_id: msg.message_id,
-						};
-						const fileOptions = {
-							filename: "image.png",
-							contentType: "image/png",
-						};
-						await bot.sendPhoto(chatId, result, fileOpts, fileOptions);
-					});
-				} else {
-					handleResponse("This command should be a response to a message that has an image, you donkey.", msg, chatId, myCache, bot, null).catch((err) => {
-						console.error(err);
-					});
-				}
-				break; */
 			case "/dream":
 				let inlineDream = text.split(" ").slice(1).join(" ");
 
@@ -716,6 +692,37 @@ Here are the commands you can use:
 					}
 				});
 				break;
+			case "/trivia":
+				const lastUsedKey = `lastUsed-${chatId}`;
+				const lastUsed = myCache.get(lastUsedKey);
+				const cooldown = 20000;
+				if (lastUsed && new Date() - new Date(lastUsed) < cooldown) {
+					const timeLeft = Math.ceil((cooldown - (new Date() - new Date(lastUsed))) / 1000);
+					handleResponse(`Patience, you can ask for a new question in ${timeLeft} seconds.`, msg, chatId, myCache, bot, null)
+						.then((resp) => {
+							setTimeout(() => {
+								bot.deleteMessage(chatId, msg.message_id);
+								bot.deleteMessage(chatId, resp.message_id);
+							}, 2000);
+						})
+						.catch((err) => {
+							console.error(err);
+						});
+					return;
+				}
+
+				const category = msg.text.split(" ")[1];
+				try {
+					await getAndSendRandomQuestion(category, chatId, "hard");
+					const lastUsedKey = `lastUsed-${chatId}`;
+					myCache.set(lastUsedKey, new Date().toISOString());
+				} catch (err) {
+					console.error(err);
+					handleResponse("Rate limit reached. If this happens too often, I will switch to a different API.", msg, chatId, myCache, bot, null).catch((err) => {
+						console.error(err);
+					});
+				}
+				break;
 		}
 	} catch (err) {
 		console.error(err);
@@ -739,7 +746,7 @@ function handleResponse(text, msg, chatId, myCache, bot, containerFormat) {
 					message_id: previousResponse,
 					chat_id: chatId,
 				})
-				.then(resolve)
+				.then(() => resolve(msg))
 				.catch(async (err) => {
 					console.error(err);
 					sendNewMessage(bot, chatId, text, msg.message_id, myCache, containerFormat).catch((err) => {
@@ -748,10 +755,14 @@ function handleResponse(text, msg, chatId, myCache, bot, containerFormat) {
 					});
 				});
 		} else {
-			sendNewMessage(bot, chatId, text, msg.message_id, myCache, containerFormat).catch((err) => {
-				console.error(err);
-				reject();
-			});
+			sendNewMessage(bot, chatId, text, msg.message_id, myCache, containerFormat)
+				.then((response) => {
+					resolve(response);
+				})
+				.catch((err) => {
+					console.error(err);
+					reject();
+				});
 		}
 	});
 }

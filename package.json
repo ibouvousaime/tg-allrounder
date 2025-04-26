@@ -23,6 +23,7 @@
 		"easy-currencies": "^1.8.1",
 		"easy-currency": "^0.1.0",
 		"etymo-js": "^1.0.1",
+		"he": "^1.2.0",
 		"languagedetect": "^2.0.0",
 		"mathjs": "^13.0.3",
 		"mongodb": "^6.8.0",
