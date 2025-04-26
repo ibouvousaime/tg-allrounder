@@ -40,7 +40,7 @@ const eightBallResponses = [
 	"Outlook not so good",
 	"Very doubtful",
 ];
-const mongoUri = "mongodb://localhost:27017";
+const mongoUri = process.env.MONGO_URI;
 
 const client = new MongoClient(mongoUri, {
 	useNewUrlParser: true,
