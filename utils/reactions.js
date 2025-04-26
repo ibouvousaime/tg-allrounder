@@ -50,10 +50,9 @@ const sendPoll = async (
 		}
 		const response = await axios.post(url, payload);
 
-		console.log("Poll sent successfully:", response.data);
 		return response.data;
 	} catch (error) {
-		console.error("Error sending poll:", error.response ? error.response.data : error.message);
+		console.error("Error sending poll:", payload);
 		throw error;
 	}
 };

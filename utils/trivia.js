@@ -55,7 +55,7 @@ async function getAndSendRandomQuestion(categoryStr, chatId, difficulty = "hard"
 				}));
 				return sendPoll(
 					chatId,
-					[category.name, ": ", question.question, "\n\n(20 second cooldown)"].join(""),
+					[category.name, ": ", question.question, "\n\n(10 second cooldown)"].join(""),
 					telegramOptions,
 					false,
 					process.env.TELEGRAM_BOT_TOKEN,

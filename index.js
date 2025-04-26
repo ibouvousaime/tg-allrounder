@@ -56,6 +56,7 @@ const { getRandomOracleMessageObj, getContext, explainContextClaude } = require(
 const { generateEmbedding, findSimilarMessages, countSenders } = require("./utils/search");
 const { extractTweetId, extractTweet, getInstagramVideoLink } = require("./utils/bird");
 const { getAndSendRandomQuestion } = require("./utils/trivia");
+const { sendRandomQuizz } = require("./utils/quizz");
 
 const myCache = new NodeCache();
 bot.on("edited_message", async (msg) => {
@@ -692,6 +693,32 @@ Here are the commands you can use:
 					}
 				});
 				break;
+			case "/quizz":
+				try {
+					const lastUsedKey = `lastUsed-${chatId}`;
+					const lastUsed = myCache.get(lastUsedKey);
+					const cooldown = 20000;
+					if (lastUsed && new Date() - new Date(lastUsed) < cooldown) {
+						const timeLeft = Math.ceil((cooldown - (new Date() - new Date(lastUsed))) / 1000);
+						handleResponse(`Patience, you can ask for a new quiz in ${timeLeft} seconds.`, msg, chatId, myCache, bot, null)
+							.then((resp) => {
+								setTimeout(() => {
+									bot.deleteMessage(chatId, msg.message_id);
+									bot.deleteMessage(chatId, resp.message_id);
+								}, 2000);
+							})
+							.catch((err) => {
+								console.error(err);
+							});
+						return;
+					}
+					const quizzCollection = db.collection("trivia");
+					await sendRandomQuizz(quizzCollection, msg.chat.id);
+					myCache.set(lastUsedKey, new Date().toISOString());
+				} catch (err) {
+					console.error(err);
+				}
+				break;
 			case "/trivia":
 				const lastUsedKey = `lastUsed-${chatId}`;
 				const lastUsed = myCache.get(lastUsedKey);
@@ -711,7 +738,10 @@ Here are the commands you can use:
 					return;
 				}
 
-				const category = msg.text.split(" ")[1];
+				let category = msg.text.split(" ")[1];
+				if (!category || category?.length == 0) {
+					category = "general";
+				}
 				try {
 					await getAndSendRandomQuestion(category, chatId, "hard");
 					const lastUsedKey = `lastUsed-${chatId}`;
