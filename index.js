@@ -638,11 +638,11 @@ Here are the commands you can use:
 						});
 					});
 				break;
-			case "/count":
-				/* if (msg.from.id == 189835675) {
+			/*case "/count":
+			 if (msg.from.id == 189835675) {
 				bot.deleteMessage(chatId, msg.message_id);
 				break;
-			} */
+			} 
 				const countRegex = msg.text.split(" ").slice(1)?.join(" ");
 				countSenders(db.collection("messages"), chatId, countRegex)
 					.then((results) => {
@@ -663,7 +663,7 @@ Here are the commands you can use:
 					.catch((err) => {
 						consol.error(err);
 					});
-				break;
+				break;*/
 			case "/regex":
 				const regex = msg.text.split(" ").slice(1)?.join(" ");
 				findSimilarMessages(db.collection("messages"), chatId, regex)

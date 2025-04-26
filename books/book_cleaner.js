@@ -2,7 +2,10 @@ const fs = require("fs");
 const readline = require("readline");
 const bookRegex = /BOOK\s([IVXLCDM]+)/;
 const { MongoClient } = require("mongodb");
-const mongoUri = "mongodb://localhost:27017";
+dotenv = require("dotenv");
+dotenv.config();
+
+const mongoUri = process.env.MONGO_URI;
 const xml2js = require("xml2js");
 
 const client = new MongoClient(mongoUri, {
@@ -61,7 +64,7 @@ function extractXMLBookContent(filePath, bookName) {
 			for (let book of books) {
 				const bookDocument = { book: bookName, number: Number(book["$"]["n"]), content: book["p"][0]["_"] };
 				console.log(book["p"][0]["milestone"]);
-				//await collection.insertOne(bookDocument);
+				await collection.insertOne(bookDocument);
 			}
 			process.exit(0);
 		});
