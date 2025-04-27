@@ -72,13 +72,13 @@ function getAndSendRandomQuestion(db, categoryStr, chatId, difficulty = "hard", 
 					if (repeat) {
 						getAndSendRandomQuestion(db, "general knowledge", chatId, difficulty, false);
 					} else {
-						throw new Error("No trivia found", categoryStr, category);
+						reject(new Error("No trivia question found"));
 					}
 				}
 			})
 			.catch((error) => {
 				console.error("Error fetching trivia question:", url);
-				throw error;
+				reject(error);
 			});
 	});
 }

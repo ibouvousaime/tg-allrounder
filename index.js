@@ -1,4 +1,5 @@
 const Tgfancy = require("tgfancy");
+
 require("dotenv").config();
 const { exec } = require("child_process");
 const NodeCache = require("node-cache");
@@ -9,6 +10,7 @@ const { sendSimpleRequestToClaude } = require("./utils/ai");
 const fs = require("fs");
 const math = require("mathjs");
 const { getWordEtymology } = require("./utils/dictionary");
+
 const bot = new Tgfancy(process.env.TELEGRAM_BOT_TOKEN, {
 	polling: {
 		params: {
@@ -16,6 +18,7 @@ const bot = new Tgfancy(process.env.TELEGRAM_BOT_TOKEN, {
 		},
 	},
 });
+
 const { MongoClient } = require("mongodb");
 const ansiEscapeRegex = /\x1B\[[0-?]*[ -/]*[@-~]/g;
 const eightBallResponses = [
@@ -57,6 +60,7 @@ const { generateEmbedding, findSimilarMessages, countSenders } = require("./util
 const { extractTweetId, extractTweet, getInstagramVideoLink } = require("./utils/bird");
 const { getAndSendRandomQuestion } = require("./utils/trivia");
 const { sendRandomQuizz } = require("./utils/quizz");
+const { getPollResults } = require("./utils/telegram_polls");
 
 const myCache = new NodeCache();
 bot.on("edited_message", async (msg) => {
@@ -82,6 +86,15 @@ function getAdminsIds(chatId) {
 	});
 }
 
+/* setInterval(() => {
+	bot.getUpdates({ allowed_updates: ["poll", "poll_answer"] }).then((updates) => {
+		console.log("poll updates", updates);
+	});
+}, 3000); */
+
+bot.on("poll", async (msg) => {
+	console.log(msg);
+});
 bot.on("text", async (msg) => {
 	const chatId = msg.chat.id;
 	const text = msg.text;
@@ -701,19 +714,23 @@ Here are the commands you can use:
 					if (lastUsed && new Date() - new Date(lastUsed) < cooldown) {
 						const timeLeft = Math.ceil((cooldown - (new Date() - new Date(lastUsed))) / 1000);
 						handleResponse(`Patience, you can ask for a new quiz in ${timeLeft} seconds.`, msg, chatId, myCache, bot, null)
-							.then((resp) => {
-								setTimeout(() => {
-									bot.deleteMessage(chatId, msg.message_id);
-									bot.deleteMessage(chatId, resp.message_id);
-								}, 2000);
-							})
+							.then((resp) => {})
 							.catch((err) => {
 								console.error(err);
 							});
 						return;
 					}
 					const quizzCollection = db.collection("trivia");
-					await sendRandomQuizz(db, quizzCollection, msg.chat.id);
+					const output = await sendRandomQuizz(db, quizzCollection, msg.chat.id);
+					/* setTimeout(() => {
+						getPollResults(output.poll.id, msg.chat.id)
+							.then((results) => {
+								console.log(results, "poll results");
+							})
+							.catch((err) => {
+								console.error(err);
+							});
+					}, 30000); */
 					myCache.set(lastUsedKey, new Date().toISOString());
 				} catch (err) {
 					console.error(err);
