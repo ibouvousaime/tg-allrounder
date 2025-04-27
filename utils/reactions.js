@@ -36,11 +36,12 @@ const sendPoll = async (
 		const payload = {
 			chat_id: chatId,
 			question: he.decode(question),
-			options: options.map((option) => he.decode(option.text || option)), 
+			options: options.map((option) => he.decode(option.text || option)),
 			is_anonymous: anon,
 		};
 		if (open_period !== null) {
-			payload.open_period = open_period; 
+			payload.open_period = open_period;
+		}
 		if (quizz) {
 			payload.type = "quiz";
 			if (correct_answer !== null) {
