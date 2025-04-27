@@ -41,6 +41,7 @@ function generateRandomString(length) {
 function getAndSendRandomQuestion(db, categoryStr, chatId, difficulty = "hard", repeat = true) {
 	return new Promise(async (resolve, reject) => {
 		const category = await getATriviaCategory(categoryStr);
+		console.log("Category:", category, categoryStr);
 		const url = `https://opentdb.com/api.php?amount=1&category=${category.id}&difficulty=${difficulty}`;
 		return axios
 			.get(url)

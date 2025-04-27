@@ -95,6 +95,7 @@ function getAdminsIds(chatId) {
 bot.on("poll", async (msg) => {
 	console.log(msg);
 });
+
 bot.on("text", async (msg) => {
 	const chatId = msg.chat.id;
 	const text = msg.text;
@@ -707,10 +708,22 @@ Here are the commands you can use:
 				});
 				break;
 			case "/quizz":
+			case "/trivia":
+				handleResponse(
+					`The telegram library I use is too outdated for polls and it's gonna be way too annoying to use for fetching quizz results since it's not basically supported so I'll remake this feature on another bot made w a modern telegram bot library inshallah.`,
+					msg,
+					chatId,
+					myCache,
+					bot,
+					null
+				);
+				break;
+
+			/* case "/quizz":
 				try {
 					const lastUsedKey = `lastUsed-${chatId}`;
 					const lastUsed = myCache.get(lastUsedKey);
-					const cooldown = 20000;
+					const cooldown = 60000;
 					if (lastUsed && new Date() - new Date(lastUsed) < cooldown) {
 						const timeLeft = Math.ceil((cooldown - (new Date() - new Date(lastUsed))) / 1000);
 						handleResponse(`Patience, you can ask for a new quiz in ${timeLeft} seconds.`, msg, chatId, myCache, bot, null)
@@ -730,7 +743,7 @@ Here are the commands you can use:
 							.catch((err) => {
 								console.error(err);
 							});
-					}, 30000); */
+					}, 30000); 
 					myCache.set(lastUsedKey, new Date().toISOString());
 				} catch (err) {
 					console.error(err);
@@ -739,7 +752,7 @@ Here are the commands you can use:
 			case "/trivia":
 				const lastUsedKey = `lastUsed-${chatId}`;
 				const lastUsed = myCache.get(lastUsedKey);
-				const cooldown = 20000;
+				const cooldown = 60000;
 				if (lastUsed && new Date() - new Date(lastUsed) < cooldown) {
 					const timeLeft = Math.ceil((cooldown - (new Date() - new Date(lastUsed))) / 1000);
 					handleResponse(`Patience, you can ask for a new question in ${timeLeft} seconds.`, msg, chatId, myCache, bot, null)
@@ -760,7 +773,7 @@ Here are the commands you can use:
 					category = "general";
 				}
 				try {
-					await getAndSendRandomQuestion(category, chatId, "hard");
+					await getAndSendRandomQuestion(db, category, chatId, "hard");
 					const lastUsedKey = `lastUsed-${chatId}`;
 					myCache.set(lastUsedKey, new Date().toISOString());
 				} catch (err) {
@@ -769,7 +782,7 @@ Here are the commands you can use:
 						console.error(err);
 					});
 				}
-				break;
+				break; */
 		}
 	} catch (err) {
 		console.error(err);
