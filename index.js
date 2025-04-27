@@ -193,9 +193,6 @@ function getRandomElement(arr) {
 async function handleMessages({ chatId, msg, text, sender }) {
 	try {
 		switch (text.split(" ")[0].split("@")[0]) {
-			case "/start":
-				bot.sendMessage(chatId, "hi");
-				break;
 			case "/help":
 				const message = `Welcome! 🤖
 
@@ -707,90 +704,6 @@ Here are the commands you can use:
 					}
 				});
 				break;
-			case "/quizz":
-			case "/trivia":
-				const lastUsedKey = `lastUsed-${chatId}`;
-				const lastUsed = myCache.get(lastUsedKey);
-				const cooldown = 30000;
-				if (lastUsed && new Date() - new Date(lastUsed) < cooldown) {
-					bot.deleteMessage(chatId, msg.message_id);
-				} else {
-					handleResponse(
-						`The telegram library I use is too outdated for polls and it's gonna be way too annoying to use for fetching quizz results since it's not basically supported so I'll remake this feature on another bot made w a modern telegram bot library inshallah.`,
-						msg,
-						chatId,
-						myCache,
-						bot,
-						null
-					);
-					myCache.set(lastUsedKey, new Date().toISOString());
-					break;
-				}
-
-			/* case "/quizz":
-				try {
-					const lastUsedKey = `lastUsed-${chatId}`;
-					const lastUsed = myCache.get(lastUsedKey);
-					const cooldown = 60000;
-					if (lastUsed && new Date() - new Date(lastUsed) < cooldown) {
-						const timeLeft = Math.ceil((cooldown - (new Date() - new Date(lastUsed))) / 1000);
-						handleResponse(`Patience, you can ask for a new quiz in ${timeLeft} seconds.`, msg, chatId, myCache, bot, null)
-							.then((resp) => {})
-							.catch((err) => {
-								console.error(err);
-							});
-						return;
-					}
-					const quizzCollection = db.collection("trivia");
-					const output = await sendRandomQuizz(db, quizzCollection, msg.chat.id);
-					/* setTimeout(() => {
-						getPollResults(output.poll.id, msg.chat.id)
-							.then((results) => {
-								console.log(results, "poll results");
-							})
-							.catch((err) => {
-								console.error(err);
-							});
-					}, 30000); 
-					myCache.set(lastUsedKey, new Date().toISOString());
-				} catch (err) {
-					console.error(err);
-				}
-				break;
-			case "/trivia":
-				const lastUsedKey = `lastUsed-${chatId}`;
-				const lastUsed = myCache.get(lastUsedKey);
-				const cooldown = 60000;
-				if (lastUsed && new Date() - new Date(lastUsed) < cooldown) {
-					const timeLeft = Math.ceil((cooldown - (new Date() - new Date(lastUsed))) / 1000);
-					handleResponse(`Patience, you can ask for a new question in ${timeLeft} seconds.`, msg, chatId, myCache, bot, null)
-						.then((resp) => {
-							setTimeout(() => {
-								bot.deleteMessage(chatId, msg.message_id);
-								bot.deleteMessage(chatId, resp.message_id);
-							}, 2000);
-						})
-						.catch((err) => {
-							console.error(err);
-						});
-					return;
-				}
-
-				let category = msg.text.split(" ")[1];
-				if (!category || category?.length == 0) {
-					category = "general";
-				}
-				try {
-					await getAndSendRandomQuestion(db, category, chatId, "hard");
-					const lastUsedKey = `lastUsed-${chatId}`;
-					myCache.set(lastUsedKey, new Date().toISOString());
-				} catch (err) {
-					console.error(err);
-					handleResponse("Rate limit reached. If this happens too often, I will switch to a different API.", msg, chatId, myCache, bot, null).catch((err) => {
-						console.error(err);
-					});
-				}
-				break; */
 		}
 	} catch (err) {
 		console.error(err);
