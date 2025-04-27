@@ -709,15 +709,23 @@ Here are the commands you can use:
 				break;
 			case "/quizz":
 			case "/trivia":
-				handleResponse(
-					`The telegram library I use is too outdated for polls and it's gonna be way too annoying to use for fetching quizz results since it's not basically supported so I'll remake this feature on another bot made w a modern telegram bot library inshallah.`,
-					msg,
-					chatId,
-					myCache,
-					bot,
-					null
-				);
-				break;
+				const lastUsedKey = `lastUsed-${chatId}`;
+				const lastUsed = myCache.get(lastUsedKey);
+				const cooldown = 30000;
+				if (lastUsed && new Date() - new Date(lastUsed) < cooldown) {
+					bot.deleteMessage(chatId, msg.message_id);
+				} else {
+					handleResponse(
+						`The telegram library I use is too outdated for polls and it's gonna be way too annoying to use for fetching quizz results since it's not basically supported so I'll remake this feature on another bot made w a modern telegram bot library inshallah.`,
+						msg,
+						chatId,
+						myCache,
+						bot,
+						null
+					);
+					myCache.set(lastUsedKey, new Date().toISOString());
+					break;
+				}
 
 			/* case "/quizz":
 				try {
