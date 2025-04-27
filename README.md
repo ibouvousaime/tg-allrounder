@@ -12,4 +12,4 @@ https://www.perseus.tufts.edu/hopper/dltext?doc=Perseus%3Atext%3A1999.01.0136
 
 https://www.perseus.tufts.edu/hopper/dltext?doc=Perseus%3Atext%3A1999.01.0134
 
-=
+The trivia part is from https://opentdb.com/api_category.php
