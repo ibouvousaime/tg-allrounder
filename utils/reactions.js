@@ -21,6 +21,7 @@ function reactToTelegramMessage(token, reaction, chatId, messageId) {
 }
 
 const sendPoll = async (
+	db,
 	chatId,
 	question,
 	options,
@@ -32,16 +33,14 @@ const sendPoll = async (
 ) => {
 	try {
 		const url = `https://api.telegram.org/bot${botToken}/sendPoll`;
-		console.log({ question, options, quizz, correct_answer });
 		const payload = {
 			chat_id: chatId,
 			question: he.decode(question),
-			options: options.map((option) => he.decode(option.text || option)), // Support both strings and objects with { text }
+			options: options.map((option) => he.decode(option.text || option)), 
 			is_anonymous: anon,
 		};
 		if (open_period !== null) {
-			payload.open_period = open_period; // set it here
-		}
+			payload.open_period = open_period; 
 		if (quizz) {
 			payload.type = "quiz";
 			if (correct_answer !== null) {
@@ -49,6 +48,14 @@ const sendPoll = async (
 			}
 		}
 		const response = await axios.post(url, payload);
+		const data = response.data;
+		db.collection("polls").insertOne({
+			chatId: chatId,
+			question: question,
+			options: options.map((option) => option.text || option),
+			correct_answer: correct_answer,
+			data: data.result,
+		});
 
 		return response.data;
 	} catch (error) {

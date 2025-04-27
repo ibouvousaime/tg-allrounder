@@ -397,11 +397,11 @@ Here are the commands you can use:
 				break;
 			case "/invite":
 				const invite = text.split(" ").slice(1).join(" ");
-				sendPoll(msg.chat.id, `Invite ${invite} to the chat?`, [{ text: "Yes" }, { text: "No" }], true);
+				sendPoll(db, msg.chat.id, `Invite ${invite} to the chat?`, [{ text: "Yes" }, { text: "No" }], true);
 				break;
 			case "/voteban":
 				const victim = text.split(" ").slice(1).join(" ");
-				sendPoll(msg.chat.id, `Ban ${victim}?`, [{ text: "Yes" }, { text: "No" }], false);
+				sendPoll(db, msg.chat.id, `Ban ${victim}?`, [{ text: "Yes" }, { text: "No" }], false);
 				break;
 
 			case "/cis":
@@ -713,7 +713,7 @@ Here are the commands you can use:
 						return;
 					}
 					const quizzCollection = db.collection("trivia");
-					await sendRandomQuizz(quizzCollection, msg.chat.id);
+					await sendRandomQuizz(db, quizzCollection, msg.chat.id);
 					myCache.set(lastUsedKey, new Date().toISOString());
 				} catch (err) {
 					console.error(err);
