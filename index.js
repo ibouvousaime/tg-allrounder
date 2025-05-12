@@ -61,6 +61,7 @@ const { extractTweetId, extractTweet, getInstagramVideoLink } = require("./utils
 const { getAndSendRandomQuestion } = require("./utils/trivia");
 const { sendRandomQuizz } = require("./utils/quizz");
 const { getPollResults } = require("./utils/telegram_polls");
+const { getReading } = require("./utils/tarot");
 
 const myCache = new NodeCache();
 bot.on("edited_message", async (msg) => {
@@ -178,6 +179,7 @@ bot.on("text", async (msg) => {
 					collection.insertOne({ ...newMessage });
 				});
 		} else { */
+		newMessage.date = new Date(newMessage.date * 1000);
 		collection.insertOne({ ...newMessage }).catch((err) => {
 			console.error(err);
 		});
@@ -626,11 +628,11 @@ Here are the commands you can use:
 						});
 					});
 				break;
-			/*case "/count":
-			 if (msg.from.id == 189835675) {
-				bot.deleteMessage(chatId, msg.message_id);
-				break;
-			} 
+			case "/count":
+				if (msg.from.id == 189835675) {
+					bot.deleteMessage(chatId, msg.message_id);
+					break;
+				}
 				const countRegex = msg.text.split(" ").slice(1)?.join(" ");
 				countSenders(db.collection("messages"), chatId, countRegex)
 					.then((results) => {
@@ -651,7 +653,7 @@ Here are the commands you can use:
 					.catch((err) => {
 						consol.error(err);
 					});
-				break;*/
+				break;
 			case "/regex":
 				const regex = msg.text.split(" ").slice(1)?.join(" ");
 				findSimilarMessages(db.collection("messages"), chatId, regex)
@@ -703,6 +705,22 @@ Here are the commands you can use:
 						console.error(err);
 					}
 				});
+				break;
+			case "/tarot3":
+				const cardsToDraw = 3;
+				const { slideshowPath, reading } = await getReading(cardsToDraw);
+				if (slideshowPath) {
+					const fileOptions = {
+						filename: "video.mp4",
+						contentType: "video/mp4",
+					};
+					await bot.sendVideo(chatId, slideshowPath, { reply_to_message_id: msg.message_id, caption: reading }, fileOptions);
+					fs.unlink(slideshowPath, (err) => {
+						if (err) {
+							console.error(err);
+						}
+					});
+				}
 				break;
 		}
 	} catch (err) {

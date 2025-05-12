@@ -13,3 +13,5 @@ https://www.perseus.tufts.edu/hopper/dltext?doc=Perseus%3Atext%3A1999.01.0136
 https://www.perseus.tufts.edu/hopper/dltext?doc=Perseus%3Atext%3A1999.01.0134
 
 The trivia part is from https://opentdb.com/api_category.php
+
+The tarot cards are from https://luciellaes.itch.io/rider-waite-smith-tarot-cards-cc0
