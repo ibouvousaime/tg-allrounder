@@ -706,21 +706,29 @@ Here are the commands you can use:
 					}
 				});
 				break;
+			case "/tarot1":
 			case "/tarot3":
-				const cardsToDraw = 3;
-				const { slideshowPath, reading } = await getReading(cardsToDraw);
-				if (slideshowPath) {
-					const fileOptions = {
-						filename: "video.mp4",
-						contentType: "video/mp4",
-					};
-					await bot.sendVideo(chatId, slideshowPath, { reply_to_message_id: msg.message_id, caption: reading }, fileOptions);
-					fs.unlink(slideshowPath, (err) => {
-						if (err) {
-							console.error(err);
-						}
-					});
-				}
+			case "/tarot10":
+				const cardsToDraw = Number(msg.text.split("tarot")[1]) || 3;
+				const { slideshowPath, reading, imagePaths } = await getReading(cardsToDraw);
+				const fileOptions = {
+					filename: "video.mp4",
+					contentType: "video/mp4",
+				};
+				await bot.sendMessage(chatId, reading, { reply_to_message_id: msg.message_id });
+				/* await bot.sendMediaGroup(
+					chatId,
+					imagePaths.map((path) => ({ type: "photo", media: path })),
+					{ reply_to_message_id: msg.message_id, caption: reading }
+				); */
+				//await bot.sendDocument(chatId, slideshowPath, { reply_to_message_id: msg.message_id, caption: reading }, fileOptions);
+				//await bot.sendVideo(chatId, slideshowPath, { reply_to_message_id: msg.message_id, caption: reading }, fileOptions);
+				fs.unlink(slideshowPath, (err) => {
+					if (err) {
+						console.error(err);
+					}
+				});
+
 				break;
 		}
 	} catch (err) {
