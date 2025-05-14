@@ -101,15 +101,6 @@ bot.on("text", async (msg) => {
 	const chatId = msg.chat.id;
 	const text = msg.text;
 	const tweetId = extractTweetId(msg.text);
-	/* 	getInstagramVideoLink(msg.text)
-		.then((instagramLinks) => {
-			instagramLinks.forEach((link) => {
-				bot.sendVideo(chatId, link.download_link);
-			});
-		})
-		.catch((err) => {
-			console.error(err);
-		}); */
 	if (tweetId) {
 		if (msg.link_preview_options?.is_disabled) {
 			const tweetData = await extractTweet(msg.text);
@@ -144,9 +135,7 @@ bot.on("text", async (msg) => {
 			await bot.forwardMessage(process.env.LogChat, chatId, msg.message_id);
 		}
 	}
-	/* if (text.toLowerCase().includes("Ibou")) {
-		bot.forwardMessage()
-	} */
+
 	const sender = msg.from;
 	const newMessage = {
 		chatId: chatId,
@@ -155,35 +144,11 @@ bot.on("text", async (msg) => {
 		date: msg.date,
 		sender: [msg.from.first_name, msg.from.last_name].join(" "),
 	};
-	/* 	const measurement = extractAndConvertToCm("something " + msg.text.split(" ").slice(1).join(" "));
-	if (measurement) {
-		bot.sendMessage(msg.chat.id, `${measurement} cm*`);
-	}
-	if (eyeWords.some((word) => containsWord(msg.text.toLowerCase(), word))) {
-		reactToTelegramMessage(process.env.TELEGRAM_BOT_TOKEN, "👀", chatId, msg.message_id);
-	} else if (bannedWords.some((word) => containsWord(msg.text.toLowerCase(), word)) || measurement) {
-		reactToTelegramMessage(process.env.TELEGRAM_BOT_TOKEN, "🤬", chatId, msg.message_id);
-	} else if (nerdwords.some((word) => containsWord(msg.text.toLowerCase(), word))) {
-		reactToTelegramMessage(process.env.TELEGRAM_BOT_TOKEN, "🤓", chatId, msg.message_id);
-	} */
-	let embeddings = undefined;
 	if (msg.text && !msg.text?.trim()?.startsWith("/")) {
-		/* if (!msg.text?.startsWith("/")) {
-			model
-				.embed([msg.text])
-				.then((embeddings) => {
-					collection.insertOne({ ...newMessage, embeddings: embeddings?.arraySync()[0] });
-				})
-				.catch((err) => {
-					console.log(err)
-					collection.insertOne({ ...newMessage });
-				});
-		} else { */
 		newMessage.date = new Date(newMessage.date * 1000);
 		collection.insertOne({ ...newMessage }).catch((err) => {
 			console.error(err);
 		});
-		/* } */
 	}
 	if (text.trim()[0] != "/") return;
 	handleMessages({ chatId, text, msg, sender });
@@ -590,6 +555,9 @@ Here are the commands you can use:
 							}
 						});
 				}
+				break;
+			case "/quran":
+				handleResponse(`Sorry, @${msg.from.username}, I don't do it for the kuffar.`, msg, chatId, myCache, bot, null).catch((err) => {});
 				break;
 			case "/glossary":
 				const query = msg.text.split(" ").slice(1).join(" ");
