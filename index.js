@@ -62,6 +62,7 @@ const { getAndSendRandomQuestion } = require("./utils/trivia");
 const { sendRandomQuizz } = require("./utils/quizz");
 const { getPollResults } = require("./utils/telegram_polls");
 const { getReading } = require("./utils/tarot");
+const { MaxPool3DGrad } = require("@tensorflow/tfjs");
 
 const myCache = new NodeCache();
 bot.on("edited_message", async (msg) => {
@@ -486,7 +487,7 @@ Here are the commands you can use:
 
 				explainContextClaude(db.collection("books"), `${target?.length > 0 ? target : "@" + msg.from.username}`)
 					.then((context) => {
-						handleResponse(context, msg, chatId, myCache, bot, null).catch((err) => {
+						handleResponse(`<blockquote expandable>${context}</blockquote>`, msg, chatId, myCache, bot, null).catch((err) => {
 							console.error(err);
 						});
 					})
@@ -556,9 +557,9 @@ Here are the commands you can use:
 						});
 				}
 				break;
-			case "/quran":
+			/* 			case "/quran":
 				handleResponse(`Sorry, @${msg.from.username}, I don't do it for the kuffar.`, msg, chatId, myCache, bot, null).catch((err) => {});
-				break;
+				break; */
 			case "/glossary":
 				const query = msg.text.split(" ").slice(1).join(" ");
 				db.collection("glossary")
@@ -614,7 +615,7 @@ Here are the commands you can use:
 						} else {
 							textOutput = "Results : \n" + textOutput;
 						}
-						handleResponse(textOutput, msg, chatId, myCache, bot, null).catch((err) => {
+						handleResponse(`<blockquote expandable>${textOutput}</blockquote>`, msg, chatId, myCache, bot, null).catch((err) => {
 							console.error(err);
 						});
 					})
@@ -663,10 +664,10 @@ Here are the commands you can use:
 						const prompt = "Generate a tldr for this article.";
 						let request = `${cleanedContent} ${prompt}\n ${telegramHTMLPrompt}`;
 						if (repliedToMessageURL && msgQuestion.length) {
-							request = `Give a very short answer to this question ${msgQuestion}. Here's the article to repond to the question: ${cleanedContent}\n ${telegramHTMLPrompt}`;
+							request = `Give a short answer to this question ${msgQuestion}. Here's the article to repond to the question: ${cleanedContent}\n ${telegramHTMLPrompt}`;
 						}
 						const summary = await sendSimpleRequestToClaude(request);
-						handleResponse(summary.content[0].text, msg, chatId, myCache, bot, null).catch((err) => {
+						handleResponse(`<blockquote expandable>${summary.content[0].text}</blockquote>`, msg, chatId, myCache, bot, null).catch((err) => {
 							console.error(err);
 						});
 					} catch (err) {
@@ -678,25 +679,38 @@ Here are the commands you can use:
 			case "/tarot3":
 			case "/tarot10":
 				const cardsToDraw = Number(msg.text.split("tarot")[1]) || 3;
+				const userQuestion = msg.text.split(" ").splice(1).join(" ");
 				const { slideshowPath, reading, imagePaths } = await getReading(cardsToDraw);
 				const fileOptions = {
 					filename: "video.mp4",
 					contentType: "video/mp4",
 				};
-				await bot.sendMessage(chatId, reading, { reply_to_message_id: msg.message_id });
-				/* await bot.sendMediaGroup(
-					chatId,
-					imagePaths.map((path) => ({ type: "photo", media: path })),
-					{ reply_to_message_id: msg.message_id, caption: reading }
-				); */
-				//await bot.sendDocument(chatId, slideshowPath, { reply_to_message_id: msg.message_id, caption: reading }, fileOptions);
-				//await bot.sendVideo(chatId, slideshowPath, { reply_to_message_id: msg.message_id, caption: reading }, fileOptions);
-				fs.unlink(slideshowPath, (err) => {
-					if (err) {
-						console.error(err);
-					}
+
+				const llmRequest = `
+				Generate a tarot reading for ${[msg.from.first_name, msg.from.last_name].join(" ").trim()} (@${msg.from.username}) based on these cards: ${reading.join(",")}.
+				${userQuestion.trim().length > 0 ? `The reading should address this specific question: "${userQuestion}"` : ""}
+				
+				Format the response as a conversation between Dasha Nekrasova and Anna Khachiyan from the Red Scare podcast. Include their typical banter, cultural references, and sardonic tone. They should directly address ${msg.from.username ? `@${msg.from.username}` : "the querent"} during the reading.
+				
+				If there's a natural opportunity for a clever wordplay or joke related to the querent's name that fits the reading's context, include it, but don't force it.
+				
+				The reading should:
+				- Interpret each card's meaning in relation to the others
+				- Maintain the nihilistic yet insightful tone of the podcast
+				- Include references to psychoanalysis, cultural theory, or art when relevant
+				- End with some form of conclusion about the querent's situation
+				- Write a message as it's gonna be parsed by the telegram HTML parse mode
+				`;
+				const tarotMessage = await bot.sendMessage(msg.chat.id, reading.join("\n") + `\n\n<blockquote expandable>...</blockquote>`, {
+					parse_mode: "HTML",
 				});
 
+				const interpretation = await sendSimpleRequestToClaude(llmRequest);
+				await bot.editMessageText(reading + `\n\n<blockquote expandable>${interpretation.content[0].text}</blockquote>`, {
+					parse_mode: "HTML",
+					message_id: tarotMessage.message_id,
+					chat_id: msg.chat.id,
+				});
 				break;
 		}
 	} catch (err) {

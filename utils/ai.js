@@ -5,7 +5,7 @@ function sendSimpleRequestToClaude(message) {
 	return anthropic.messages.create({
 		max_tokens: 1024,
 		messages: [{ role: "user", content: message }],
-		model: "claude-3-haiku-20240307",
+		model: "claude-3-7-sonnet-latest",
 	});
 }
 module.exports = { sendSimpleRequestToClaude };

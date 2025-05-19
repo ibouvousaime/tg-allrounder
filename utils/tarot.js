@@ -17,7 +17,7 @@ function getReading(count) {
 		const imagePaths = reading.map((card) => "cards/" + card.image);
 		const slideshowPath = `${new Date().getTime()}.mp4`;
 		//await generateSlideShow(reading, slideshowPath);
-		resolve({ imagePaths, slideshowPath, reading: reading.map((card) => card.name + (card.reversed ? " (reversed)" : "")).join("\n") });
+		resolve({ imagePaths, slideshowPath, reading: reading.map((card) => card.name) });
 	});
 }
 
