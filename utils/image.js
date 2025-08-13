@@ -346,7 +346,7 @@ function generateUnsplashImage(text, sender, useDefaultImages = false) {
 		try {
 			const lngDetector = new LanguageDetect();
 			lngDetector.setLanguageType("iso2");
-			const language = lngDetector.detect(text, 1)[0][0];
+			const language = lngDetector.detect(text, 1)?.[0]?.[0] || 'eng';
 			const keywords = darkNatureSearchTerms;
 			let chosenSearchTerm = useDefaultImages ? keywords[Math.floor(Math.random() * keywords.length)] : getMostImportantWord(text);
 			const textSubstitute = process.env.SUBSTITUTE_TEXT.split(" ");

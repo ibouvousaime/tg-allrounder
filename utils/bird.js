@@ -19,10 +19,7 @@ function extractTweetId(url) {
 function extractTweet(url) {
   return new Promise((resolve, reject) => {
     const tweetId = extractTweetId(url);
-    console.log(tweetId);
-    rettiwt.user.details().then((res) => {
-      console.log(res); // Returns details of the user associated with API_KEY_1
-    });
+
     rettiwt.tweet
       .details(tweetId, "id")
       .then((res) => {
