@@ -57,12 +57,14 @@ const { extractAndConvertToCm } = require("./utils/converter");
 const { eyeWords, reactToTelegramMessage, bannedWords, nerdwords, sendPoll } = require("./utils/reactions");
 const { getRandomOracleMessageObj, getContext, explainContextClaude } = require("./utils/oracle");
 const { generateEmbedding, findSimilarMessages, countSenders } = require("./utils/search");
-const { extractTweetId, extractTweet, getInstagramVideoLink } = require("./utils/bird");
+const { extractTweetId, extractTweet } = require("./utils/bird");
 const { getAndSendRandomQuestion } = require("./utils/trivia");
 const { sendRandomQuizz } = require("./utils/quizz");
 const { getPollResults } = require("./utils/telegram_polls");
 const { getReading } = require("./utils/tarot");
 const { MaxPool3DGrad } = require("@tensorflow/tfjs");
+const { extractAndEchoSocialLink } = require("./utils/downloader");
+const { findDirectArchiveLink } = require("./utils/web");
 
 const myCache = new NodeCache();
 bot.on("edited_message", async (msg) => {
@@ -106,6 +108,19 @@ bot.on("poll", async (msg) => {
 bot.on("text", async (msg) => {
 	const chatId = msg.chat.id;
 	const text = msg.text;
+	const videoExtensions = [".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm", ".mkv"];
+	const imageExtensions = ["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp", "tiff", "ico", "avif", "apng"];
+	extractAndEchoSocialLink(text, (output) => {
+		if (Array.isArray(output)) {
+			return bot.sendMediaGroup(
+				msg.chat.id,
+				output.map((media) => {
+					const isVideo = videoExtensions.some((videoext) => media.endsWith(videoext));
+					return { type: isVideo ? "video" : "photo", media };
+				})
+			);
+		}
+	});
 	const tweetId = extractTweetId(msg.text);
 	if (tweetId) {
 		if (msg.link_preview_options?.is_disabled) {
@@ -746,6 +761,16 @@ Here are the commands you can use:
 					}
 				});
 				break;
+			case "/archive":
+				const articleURL = extractUrl(msg?.reply_to_message?.text);
+				if (articleURL) {
+					findDirectArchiveLink(articleURL).then((url) => {
+						handleResponse(url, msg, chatId, myCache, bot, null).catch((err) => {
+							console.error(err);
+						});
+					});
+				}
+				break;
 			case "/tarot1":
 			case "/tarot3":
 			case "/tarot10":
@@ -770,6 +795,7 @@ Here are the commands you can use:
 				- Maintain the nihilistic yet insightful tone of the podcast
 				- Include references to psychoanalysis, cultural theory, or art when relevant
 				- End with some form of conclusion about the querent's situation
+				- NOT say that something is very [insert thinkers name] in the tarot cards
 				- Write a message as it's gonna be parsed by the telegram HTML parse mode
 				`;
 				const tarotMessage = await bot.sendMessage(msg.chat.id, reading.join("\n") + `\n<blockquote expandable>One sec...</blockquote>`, {
@@ -790,12 +816,13 @@ Here are the commands you can use:
 }
 
 function extractUrl(text) {
-	if (!text) return null;
-	const urlRegex = /(\bhttps?:\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/gi;
-	const urls = text.match(urlRegex);
-	return urls ? urls[0] : null;
+	if (!text) {
+		return null;
+	}
+	var urlRegex = /(https?:\/\/[^ ]*)/;
+	var url = text.match(urlRegex)[1];
+	return url ?? null;
 }
-
 function handleResponse(text, msg, chatId, myCache, bot, containerFormat) {
 	return new Promise(async (resolve, reject) => {
 		const previousResponse = myCache.get(`message-${msg.message_id}`);
@@ -881,21 +908,33 @@ function getWeather(location, degreeType = "C") {
 
 function getFormattedWeatherData(item) {
 	const resultLines = [];
+	const cToF = (c) => (c * 9) / 5 + 32;
+	const fToC = (f) => ((f - 32) * 5) / 9;
+	const formatTemp = (temp, degreeType) => {
+		if (degreeType === "C") {
+			const fahrenheit = cToF(temp).toFixed(1);
+			return `${temp}°C (${fahrenheit}°F)`;
+		} else if (degreeType === "F") {
+			const celsius = fToC(temp).toFixed(1);
+			return `${temp}°F (${celsius}°C)`;
+		}
+		return `${temp}°${degreeType}`;
+	};
+
 	resultLines.push(`Location: ${item.location.name}`);
-	resultLines.push(`Current Temperature: ${item.current.temperature}°${item.location.degreetype}`);
+	resultLines.push(`Current Temperature: ${formatTemp(item.current.temperature, item.location.degreetype)}`);
 	resultLines.push(`Humidity: ${item.current.humidity}%`);
-	if (item.current.feelslike) resultLines.push(`Feels Like: ${item.current.feelslike}°${item.location.degreetype}`);
+	if (item.current.feelslike) {
+		resultLines.push(`Feels Like: ${formatTemp(item.current.feelslike, item.location.degreetype)}`);
+	}
 	resultLines.push(`Conditions: ${item.current.skytext}`);
 	resultLines.push(`Observation Time: ${item.current.observationtime} on ${item.current.date}`);
 	resultLines.push(`Wind: ${item.current.winddisplay}`);
-	resultLines.push(`High: ${item.forecast[0].high}°${item.location.degreetype}`);
-	resultLines.push(`Low: ${item.forecast[0].low}°${item.location.degreetype}`);
-	if (item.current.dewPt) resultLines.push(`Dew point: ${item.current.dewPt}°${item.location.degreetype}`); /* 	resultLines.push("Forecast:");
-	item.forecast.forEach((day) => {
-		resultLines.push(`  ${day.day} (${day.date}): ${day.skytextday}, ${day.low}°-${day.high}°`);
-		if (day.precip) {
-			resultLines.push(`    Chance of precipitation: ${day.precip}%`);
-		}
-	}); */
+	resultLines.push(`Low: ${formatTemp(item.forecast[0].low, item.location.degreetype)}`);
+	resultLines.push(`High: ${formatTemp(item.forecast[0].high, item.location.degreetype)}`);
+	if (item.current.dewPt) {
+		resultLines.push(`Dew point: ${formatTemp(item.current.dewPt, item.location.degreetype)}`);
+	}
+
 	return resultLines.join("\n");
 }
