@@ -71,6 +71,14 @@ bot.on("edited_message", async (msg) => {
 	const chatId = msg.chat.id;
 	const text = msg.text || "";
 	collection.updateOne({ chatId: chatId, messageId: msg.message_id }, { $set: { text: msg.text } });
+	if (
+		msg.chat.type == "private" &&
+		!process.env.ALLOWED_TO_DM_BOT.split(" ")
+			.map((userid) => Number(userid))
+			.includes(msg.from.id)
+	) {
+		return;
+	}
 	handleMessages({ chatId, msg, text, messageID: msg.message_id });
 });
 function containsWord(str, word) {
@@ -110,6 +118,14 @@ bot.on("text", async (msg) => {
 	const text = msg.text;
 	const videoExtensions = [".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm", ".mkv"];
 	const imageExtensions = ["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp", "tiff", "ico", "avif", "apng"];
+	if (
+		msg.chat.type == "private" &&
+		!process.env.ALLOWED_TO_DM_BOT.split(" ")
+			.map((userid) => Number(userid))
+			.includes(msg.from.id)
+	) {
+		return;
+	}
 	extractAndEchoSocialLink(text, (output) => {
 		if (Array.isArray(output)) {
 			return bot.sendMediaGroup(
@@ -121,43 +137,43 @@ bot.on("text", async (msg) => {
 			);
 		}
 	});
+
 	const tweetId = extractTweetId(msg.text);
 	if (tweetId) {
-		if (msg.link_preview_options?.is_disabled) {
-			const tweetData = await extractTweet(msg.text);
-			console.log(tweetData);
-			if (tweetData) {
-				const tweetText = `<blockquote expandable>${tweetData?.fullText} \nTweet by ${tweetData?.tweetBy?.fullName || ""} (@${tweetData?.tweetBy?.userName}) on ${tweetData?.createdAt || ""} </blockquote>`;
-				if (tweetData.media?.length == 1) {
-					tweetData.media?.forEach((media) => {
-						if (media.type == "VIDEO") {
-							bot.sendVideo(chatId, media.url, {
-								caption: tweetText,
-								parse_mode: "HTML",
-							});
-						} else if (media.type == "PHOTO") {
-							bot.sendPhoto(chatId, media.url, {
-								caption: tweetText,
-								parse_mode: "HTML",
-							});
-						}
-					});
-				}
-				if (tweetData.media?.length > 1 && tweetData.media?.length <= 10) {
-					const mediaData = tweetData.media
-						.filter((media) => media.type == "PHOTO" || media.type == "PHOTO")
-						.map((media) => {
-							return { type: media.type.toLowerCase(), media: media.url };
+		//	if (msg.link_preview_options?.is_disabled) {
+		const tweetData = await extractTweet(msg.text);
+		if (tweetData) {
+			const tweetText = `<blockquote expandable>${tweetData?.fullText} \nTweet by ${tweetData?.tweetBy?.fullName || ""} (@${tweetData?.tweetBy?.userName}) on ${tweetData?.createdAt || ""} </blockquote>`;
+			if (tweetData.media?.length == 1) {
+				tweetData.media?.forEach((media) => {
+					if (media.type == "VIDEO") {
+						bot.sendVideo(chatId, media.url, {
+							parse_mode: "HTML",
 						});
-					bot.sendMediaGroup(chatId, mediaData);
-					bot.sendMessage(chatId, tweetText, { parse_mode: "HTML" });
-				}
-				if (!tweetData.media?.length) {
-					bot.sendMessage(chatId, tweetText, { parse_mode: "HTML" });
-				}
+						bot.sendMessage(chatId, tweetText, { parse_mode: "HTML", disable_web_page_preview: true });
+					} else if (media.type == "PHOTO") {
+						bot.sendPhoto(chatId, media.url, {
+							parse_mode: "HTML",
+						});
+						bot.sendMessage(chatId, tweetText, { parse_mode: "HTML", disable_web_page_preview: true });
+					}
+				});
+			}
+			if (tweetData.media?.length > 1 && tweetData.media?.length <= 10) {
+				const mediaData = tweetData.media
+					.filter((media) => media.type == "PHOTO" || media.type == "PHOTO")
+					.map((media) => {
+						return { type: media.type.toLowerCase(), media: media.url };
+					});
+				bot.sendMediaGroup(chatId, mediaData);
+				bot.sendMessage(chatId, tweetText, { parse_mode: "HTML", disable_web_page_preview: true });
+			}
+			if (!tweetData.media?.length) {
+				bot.sendMessage(chatId, tweetText, { parse_mode: "HTML", disable_web_page_preview: true });
 			}
 		}
 	}
+	//	}
 	if (msg.chat.type == "group" || msg.chat.type == "supergroup") {
 		const triggerWords = process.env.TRIGGER_WORDS?.split(" ") || [];
 		if (triggerWords.some((word) => text.toLowerCase().includes(word.toLowerCase()))) {
@@ -276,7 +292,7 @@ Here are the commands you can use:
 						.from(currencyFrom)
 						.to(currencyTo)
 						.then((response) => {
-							handleResponse(Number(response).toFixed(2).toString(), msg, chatId, myCache, bot, null).catch((err) => {
+							handleResponse(`${amount} ${currencyFrom} => ${Number(response).toFixed(2)} ${currencyTo}`, msg, chatId, myCache, bot, null).catch((err) => {
 								console.error(err);
 							});
 						})
@@ -386,9 +402,43 @@ Here are the commands you can use:
 				break;
 			case "/weather":
 				const location = text.split(" ").slice(1).join(" ");
+				/* 				const belgianCities = [
+					"Brussels",
+					"Antwerp",
+					"Ghent",
+					"Bruges",
+					"Leuven",
+					"Liege",
+					"Namur",
+					"Mons",
+					"Charleroi",
+					"Mechelen",
+					"Kortrijk",
+					"Ostend",
+					"Hasselt",
+					"Sint-Niklaas",
+					"Tournai",
+				];
+				if (belgianCities.map((city) => city.toLowerCase()).includes(location.toLowerCase())) {
+					await bot.sendMessage(chatId, "This feature only works with places from real countries.");
+					return;
+				} */
 				getWeather(location)
 					.then(async (weatherData) => {
-						handleResponse(weatherData, msg, chatId, myCache, bot, "pre")
+						handleResponse(
+							weatherData.replace(/Srinagar, India/, "Srinagar, Jammu and Kashmir"),
+							msg /*
+								.replace(/Belgium/, "Eur*pean Uni*n")
+								.replace(/Qazvin/, "Qazvin 🏳️‍🌈")
+								.replace(/Japan/, "Weebland")
+								.replace(/Spain/, "Asspain")
+								.replace(/Turkey/, "Turkey 🍉")
+								.replace(/Italy/, "🤌🤌🤌🤌") */,
+							chatId,
+							myCache,
+							bot,
+							"pre"
+						)
 							/* .then((message) => {
                 setTimeout(() => {
                   bot.deleteMessage(chatId, message.message_id);
@@ -501,7 +551,7 @@ Here are the commands you can use:
 				break;
 			case "/createsticker":
 			case "/addsticker":
-				if (msg.reply_to_message && (msg.reply_to_message.photo || msg.reply_to_message.sticker)) {
+				if (msg.reply_to_message && (msg.reply_to_message.photo || msg.reply_to_message.sticker || msg.reply_to_message.document)) {
 					const emojis = msg.text.split(" ").slice(1).join(" ").replace(/\s+/g, "");
 					if (!isEmojiString(emojis) && emojis.trim().length == 0) {
 						handleResponse("Correct usage: /addsticker <emojis>. Example : /addsticker 💧🍉.", msg, chatId, myCache, bot, null).catch((err) => {
@@ -510,7 +560,7 @@ Here are the commands you can use:
 						break;
 					}
 					const photoArray = msg.reply_to_message.photo;
-					const highestQualityPhoto = photoArray ? photoArray[photoArray.length - 1] : msg.reply_to_message.sticker;
+					const highestQualityPhoto = photoArray ? photoArray[photoArray.length - 1] : msg.reply_to_message.sticker || msg.reply_to_message.document;
 					bot.getFile(highestQualityPhoto.file_id).then(async (file) => {
 						const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
 						const chatId = msg.chat.id;
@@ -820,7 +870,10 @@ function extractUrl(text) {
 		return null;
 	}
 	var urlRegex = /(https?:\/\/[^ ]*)/;
-	var url = text.match(urlRegex)[1];
+	const matches = text.match(urlRegex);
+	console.log(matches, "matches");
+	if (!matches) return null;
+	var url = matches[0];
 	return url ?? null;
 }
 function handleResponse(text, msg, chatId, myCache, bot, containerFormat) {

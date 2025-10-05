@@ -35,7 +35,7 @@ function findSimilarMessages(collection, chatId, regex) {
 					},
 				])
 				.sort({ date: -1 })
-				.limit(10)
+				//.limit(40)
 				.toArray()
 				.then((output) => {
 					resolve(output);
@@ -95,6 +95,5 @@ function countSenders(collection, chatId, regex) {
 		}
 	});
 }
-
 
 module.exports = { findSimilarMessages, countSenders };
