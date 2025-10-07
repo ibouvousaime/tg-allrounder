@@ -4,7 +4,15 @@ const { exec } = require("child_process");
 const fs = require("fs");
 const { promisify } = require("node:util");
 const execPromise = promisify(exec);
+const SpottyDL = require("spottydl");
+const axios = require("axios");
 
+async function loadMusicModule() {
+	const musicModule = await import("ytmusic-api");
+
+	const YTMusic = musicModule.default;
+	return YTMusic;
+}
 function makeid(length) {
 	var result = "";
 	var characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -16,7 +24,16 @@ function makeid(length) {
 }
 
 async function extractAndEchoSocialLink(text, callback) {
-	const socialLinkRegex = /(https?:\/\/(www\.)?((tiktok\.com|vm\.tiktok\.com|instagram\.com)\/|youtube\.com\/shorts\/)[^\s]+)/;
+	let audioMode = false;
+	let filename = "video";
+	const { spotifyConvertedLink, name } = await getSpotifyMusicLink(text);
+	if (spotifyConvertedLink) {
+		text = spotifyConvertedLink;
+		audioMode = true;
+		filename = name;
+	}
+
+	const socialLinkRegex = /(https?:\/\/(www\.)?((tiktok\.com|vm\.tiktok\.com|instagram\.com|music\.youtube\.com)\/|youtube\.com\/shorts\/)[^\s]+)/;
 	const match = text.match(socialLinkRegex);
 	if (!match || !match[0]) {
 		return;
@@ -26,11 +43,11 @@ async function extractAndEchoSocialLink(text, callback) {
 	console.log(`Found link: ${link}`);
 
 	const destinationFolder = path.join(os.tmpdir(), makeid(20));
-	const filePath = path.join(destinationFolder, "video.%(ext)s");
+	const filePath = path.join(destinationFolder, `${filename}.%(ext)s`);
 	fs.mkdirSync(destinationFolder);
-	const ytDlpCommand = `${os.homedir()}/.local/bin/yt-dlp "${link}" -o "${filePath}" -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" --cookies ${os.homedir()}/cookies.txt `;
+	const ytDlpCommand = `${os.homedir()}/.local/bin/yt-dlp "${link}" -P  "${destinationFolder}" ${audioMode ? '-x --audio-format mp3 -f "bestaudio/best"' : '-f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"'} --cookies ${os.homedir()}/cookies.txt --embed-thumbnail`;
 	const galleryDlCommand = `${os.homedir()}/.local/bin/gallery-dl "${link}" --dest "${destinationFolder}" --cookies ${os.homedir()}/cookies.txt`;
-
+	console.log(ytDlpCommand);
 	try {
 		try {
 			await execPromise(ytDlpCommand);
@@ -73,4 +90,59 @@ const getAllFilesSync = (dirPath, arrayOfFiles = []) => {
 	return arrayOfFiles;
 };
 
-module.exports = { extractAndEchoSocialLink };
+function findSpotifyTrackLink(text) {
+	const spotifyRegex = /(?:https?:\/\/open\.spotify\.com\/|spotify:)(track|album)[:\/]([a-zA-Z0-9]+)/;
+
+	const matches = text.match(spotifyRegex);
+
+	if (matches) {
+		const fullLink = matches[0];
+		const type = matches[1];
+		const id = matches[2];
+
+		return { fullLink, type, id };
+	} else {
+		return { fullLink: null, type: null, id: null };
+	}
+}
+
+async function getSpotifyMusicLink(link) {
+	const { fullLink, type } = findSpotifyTrackLink(link);
+	if (fullLink) {
+		console.log("found spotify link", fullLink);
+		const destinationFolder = path.join(os.tmpdir(), makeid(20));
+		fs.mkdirSync(destinationFolder);
+		const YTMusic = await loadMusicModule();
+		const ytmusic = new YTMusic();
+		await ytmusic.initialize(/* { cookies: fs.readFileSync(path.join(os.homedir(), "cookies.txt")).toString() } */);
+
+		if (type == "track") {
+			const songData = await SpottyDL.getTrack(fullLink);
+			const fullSongName = `${songData.artist} - ${songData.title}`;
+			const result = await ytmusic.searchSongs(fullSongName);
+			return { spotifyConvertedLink: `https://music.youtube.com/watch?v=${result[0].videoId}`, name: fullSongName };
+		} else if (type == "album") {
+			const albumData = await SpottyDL.getAlbum(fullLink);
+			const fullAlbumName = `${albumData.artist} - ${albumData.name}}`;
+			const youtubeAlbums = await ytmusic.searchAlbums(fullAlbumName);
+			console.log(youtubeAlbums);
+			return { spotifyConvertedLink: `https://music.youtube.com/playlist?list=${youtubeAlbums[0].playlistId}`, name: fullAlbumName };
+		}
+	} else return { spotifyConvertedLink: null, name: null };
+}
+
+async function downloadImageAsBuffer(url) {
+	try {
+		const response = await axios.get(url, {
+			responseType: "arraybuffer",
+		});
+
+		const imageBuffer = Buffer.from(response.data, "binary");
+
+		return imageBuffer;
+	} catch (error) {
+		throw new Error(`code: ${error.response ? error.response.status : "N/A"}`);
+	}
+}
+
+module.exports = { extractAndEchoSocialLink, getSpotifyMusicLink, downloadImageAsBuffer };

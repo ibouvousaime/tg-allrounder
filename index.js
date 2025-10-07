@@ -63,7 +63,7 @@ const { sendRandomQuizz } = require("./utils/quizz");
 const { getPollResults } = require("./utils/telegram_polls");
 const { getReading } = require("./utils/tarot");
 const { MaxPool3DGrad } = require("@tensorflow/tfjs");
-const { extractAndEchoSocialLink } = require("./utils/downloader");
+const { extractAndEchoSocialLink, getSpotifyMusicLink, downloadImageAsBuffer } = require("./utils/downloader");
 const { findDirectArchiveLink } = require("./utils/web");
 
 const myCache = new NodeCache();
@@ -132,7 +132,7 @@ bot.on("text", async (msg) => {
 				msg.chat.id,
 				output.map((media) => {
 					const isVideo = videoExtensions.some((videoext) => media.endsWith(videoext));
-					return { type: isVideo ? "video" : "photo", media };
+					return { type: isVideo ? "video" : "audio", media };
 				})
 			);
 		}
@@ -144,6 +144,18 @@ bot.on("text", async (msg) => {
 		const tweetData = await extractTweet(msg.text);
 		if (tweetData) {
 			const tweetText = `<blockquote expandable>${tweetData?.fullText} \nTweet by ${tweetData?.tweetBy?.fullName || ""} (@${tweetData?.tweetBy?.userName}) on ${tweetData?.createdAt || ""} </blockquote>`;
+			tweetData.media = await Promise.all(
+				tweetData.media.map((media) => {
+					return new Promise(async (resolve, reject) => {
+						try {
+							media.url = await downloadImageAsBuffer(media.url);
+							resolve(media);
+						} catch (err) {
+							reject(err);
+						}
+					});
+				})
+			);
 			if (tweetData.media?.length == 1) {
 				tweetData.media?.forEach((media) => {
 					if (media.type == "VIDEO") {
@@ -161,10 +173,11 @@ bot.on("text", async (msg) => {
 			}
 			if (tweetData.media?.length > 1 && tweetData.media?.length <= 10) {
 				const mediaData = tweetData.media
-					.filter((media) => media.type == "PHOTO" || media.type == "PHOTO")
+					.filter((media) => media.type == "PHOTO" || media.type == "VIDEO")
 					.map((media) => {
 						return { type: media.type.toLowerCase(), media: media.url };
 					});
+				console.log(mediaData, "media data");
 				bot.sendMediaGroup(chatId, mediaData);
 				bot.sendMessage(chatId, tweetText, { parse_mode: "HTML", disable_web_page_preview: true });
 			}
@@ -402,51 +415,12 @@ Here are the commands you can use:
 				break;
 			case "/weather":
 				const location = text.split(" ").slice(1).join(" ");
-				/* 				const belgianCities = [
-					"Brussels",
-					"Antwerp",
-					"Ghent",
-					"Bruges",
-					"Leuven",
-					"Liege",
-					"Namur",
-					"Mons",
-					"Charleroi",
-					"Mechelen",
-					"Kortrijk",
-					"Ostend",
-					"Hasselt",
-					"Sint-Niklaas",
-					"Tournai",
-				];
-				if (belgianCities.map((city) => city.toLowerCase()).includes(location.toLowerCase())) {
-					await bot.sendMessage(chatId, "This feature only works with places from real countries.");
-					return;
-				} */
+
 				getWeather(location)
 					.then(async (weatherData) => {
-						handleResponse(
-							weatherData.replace(/Srinagar, India/, "Srinagar, Jammu and Kashmir"),
-							msg /*
-								.replace(/Belgium/, "Eur*pean Uni*n")
-								.replace(/Qazvin/, "Qazvin 🏳️‍🌈")
-								.replace(/Japan/, "Weebland")
-								.replace(/Spain/, "Asspain")
-								.replace(/Turkey/, "Turkey 🍉")
-								.replace(/Italy/, "🤌🤌🤌🤌") */,
-							chatId,
-							myCache,
-							bot,
-							"pre"
-						)
-							/* .then((message) => {
-                setTimeout(() => {
-                  bot.deleteMessage(chatId, message.message_id);
-                }, 30000);
-              }) */
-							.catch((err) => {
-								console.error(err);
-							});
+						handleResponse(weatherData.replace(/Srinagar, India/, "Srinagar, Jammu and Kashmir"), msg, chatId, myCache, bot, "pre").catch((err) => {
+							console.error(err);
+						});
 					})
 					.catch((err) => {
 						console.error(err);
