@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+pydantic
+
+#For GPU support, you might need to install a specific torch version, e.g.:
+#pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+torch
+transformers
+scipy
+accelerate
+soundfile

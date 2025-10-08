@@ -6,21 +6,13 @@ const { promisify } = require("node:util");
 const execPromise = promisify(exec);
 const SpottyDL = require("spottydl");
 const axios = require("axios");
+const { makeid } = require("./util");
 
 async function loadMusicModule() {
 	const musicModule = await import("ytmusic-api");
 
 	const YTMusic = musicModule.default;
 	return YTMusic;
-}
-function makeid(length) {
-	var result = "";
-	var characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-	var charactersLength = characters.length;
-	for (var i = 0; i < length; i++) {
-		result += characters.charAt(Math.floor(Math.random() * charactersLength));
-	}
-	return result;
 }
 
 async function extractAndEchoSocialLink(text, callback) {
@@ -43,9 +35,9 @@ async function extractAndEchoSocialLink(text, callback) {
 	console.log(`Found link: ${link}`);
 
 	const destinationFolder = path.join(os.tmpdir(), makeid(20));
-	const filePath = path.join(destinationFolder, `${filename}.%(ext)s`);
+	//const filePath = path.join(destinationFolder, `${filename}.%(ext)s`);
 	fs.mkdirSync(destinationFolder);
-	const ytDlpCommand = `${os.homedir()}/.local/bin/yt-dlp "${link}" -P  "${destinationFolder}" ${audioMode ? '-x --audio-format mp3 -f "bestaudio/best"' : '-f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"'} --cookies ${os.homedir()}/cookies.txt --embed-thumbnail`;
+	const ytDlpCommand = `${os.homedir()}/.local/bin/yt-dlp --embed-metadata "${link}" -P  "${destinationFolder}" ${audioMode ? '-x --audio-format mp3 -f "bestaudio/best"' : '-f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"'} --cookies ${os.homedir()}/cookies.txt`;
 	const galleryDlCommand = `${os.homedir()}/.local/bin/gallery-dl "${link}" --dest "${destinationFolder}" --cookies ${os.homedir()}/cookies.txt`;
 	console.log(ytDlpCommand);
 	try {
@@ -109,9 +101,6 @@ function findSpotifyTrackLink(text) {
 async function getSpotifyMusicLink(link) {
 	const { fullLink, type } = findSpotifyTrackLink(link);
 	if (fullLink) {
-		console.log("found spotify link", fullLink);
-		const destinationFolder = path.join(os.tmpdir(), makeid(20));
-		fs.mkdirSync(destinationFolder);
 		const YTMusic = await loadMusicModule();
 		const ytmusic = new YTMusic();
 		await ytmusic.initialize(/* { cookies: fs.readFileSync(path.join(os.homedir(), "cookies.txt")).toString() } */);

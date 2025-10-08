@@ -6,7 +6,7 @@ const NodeCache = require("node-cache");
 var weather = require("weather-js");
 const { error } = require("console");
 const { removeImageBackground, generateUnsplashImage, doOCR, generateWordCloud, resizeImageBuffer, isEmojiString } = require("./utils/image");
-const { sendSimpleRequestToClaude } = require("./utils/ai");
+const { sendSimpleRequestToClaude, sendRequestWithImageToClaude, guessMediaType } = require("./utils/ai");
 const fs = require("fs");
 const math = require("mathjs");
 const { getWordEtymology } = require("./utils/dictionary");
@@ -65,6 +65,8 @@ const { getReading } = require("./utils/tarot");
 const { MaxPool3DGrad } = require("@tensorflow/tfjs");
 const { extractAndEchoSocialLink, getSpotifyMusicLink, downloadImageAsBuffer } = require("./utils/downloader");
 const { findDirectArchiveLink } = require("./utils/web");
+const { textToSpeech, createConversationAudio } = require("./utils/tts");
+const { makeid } = require("./utils/util");
 
 const myCache = new NodeCache();
 bot.on("edited_message", async (msg) => {
@@ -128,13 +130,20 @@ bot.on("text", async (msg) => {
 	}
 	extractAndEchoSocialLink(text, (output) => {
 		if (Array.isArray(output)) {
-			return bot.sendMediaGroup(
-				msg.chat.id,
-				output.map((media) => {
+			output.forEach((media) => {
+				fs.readFile(media, (err, data) => {
+					if (err) {
+						console.error("error reading file:", media, err);
+						return;
+					}
 					const isVideo = videoExtensions.some((videoext) => media.endsWith(videoext));
-					return { type: isVideo ? "video" : "audio", media };
-				})
-			);
+					if (isVideo) {
+						bot.sendVideo(chatId, data, { reply_to_message_id: msg.message_id });
+					} else {
+						bot.sendAudio(chatId, data, { reply_to_message_id: msg.message_id });
+					}
+				});
+			});
 		}
 	});
 
@@ -144,6 +153,7 @@ bot.on("text", async (msg) => {
 		const tweetData = await extractTweet(msg.text);
 		if (tweetData) {
 			const tweetText = `<blockquote expandable>${tweetData?.fullText} \nTweet by ${tweetData?.tweetBy?.fullName || ""} (@${tweetData?.tweetBy?.userName}) on ${tweetData?.createdAt || ""} </blockquote>`;
+			tweetData.media = tweetData.media || [];
 			tweetData.media = await Promise.all(
 				tweetData.media.map((media) => {
 					return new Promise(async (resolve, reject) => {
@@ -156,33 +166,45 @@ bot.on("text", async (msg) => {
 					});
 				})
 			);
-			if (tweetData.media?.length == 1) {
-				tweetData.media?.forEach((media) => {
-					if (media.type == "VIDEO") {
-						bot.sendVideo(chatId, media.url, {
-							parse_mode: "HTML",
-						});
-						bot.sendMessage(chatId, tweetText, { parse_mode: "HTML", disable_web_page_preview: true });
-					} else if (media.type == "PHOTO") {
-						bot.sendPhoto(chatId, media.url, {
-							parse_mode: "HTML",
-						});
-						bot.sendMessage(chatId, tweetText, { parse_mode: "HTML", disable_web_page_preview: true });
+			const media = tweetData.media;
+			const mediaCount = media?.length || 0;
+
+			const messageOptions = {
+				parse_mode: "HTML",
+				disable_web_page_preview: true,
+			};
+
+			try {
+				if (mediaCount === 0) {
+					bot.sendMessage(chatId, tweetText, messageOptions);
+				} else if (mediaCount === 1) {
+					const singleMedia = media[0];
+					const optionsWithCaption = { ...messageOptions, caption: tweetText };
+
+					if (singleMedia.type === "VIDEO") {
+						bot.sendVideo(chatId, singleMedia.url, optionsWithCaption);
+					} else {
+						bot.sendPhoto(chatId, singleMedia.url, optionsWithCaption);
 					}
-				});
-			}
-			if (tweetData.media?.length > 1 && tweetData.media?.length <= 10) {
-				const mediaData = tweetData.media
-					.filter((media) => media.type == "PHOTO" || media.type == "VIDEO")
-					.map((media) => {
-						return { type: media.type.toLowerCase(), media: media.url };
-					});
-				console.log(mediaData, "media data");
-				bot.sendMediaGroup(chatId, mediaData);
-				bot.sendMessage(chatId, tweetText, { parse_mode: "HTML", disable_web_page_preview: true });
-			}
-			if (!tweetData.media?.length) {
-				bot.sendMessage(chatId, tweetText, { parse_mode: "HTML", disable_web_page_preview: true });
+				} else if (mediaCount > 1 && mediaCount <= 10) {
+					const mediaGroup = media.map((item, index) => ({
+						type: item.type.toLowerCase(),
+						media: item.url,
+						...(index === 0 && { caption: tweetText, parse_mode: "HTML" }),
+					}));
+					bot.sendMediaGroup(chatId, mediaGroup);
+				} else {
+					for (const item of media) {
+						if (item.type === "VIDEO") {
+							await bot.sendVideo(chatId, item.url);
+						} else if (item.type === "PHOTO") {
+							await bot.sendPhoto(chatId, item.url);
+						}
+					}
+					bot.sendMessage(chatId, tweetText, messageOptions);
+				}
+			} catch (error) {
+				console.error("Failed to send tweet media:", error);
 			}
 		}
 	}
@@ -330,10 +352,10 @@ Here are the commands you can use:
 						const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
 						const response = await fetch(fileUrl);
 						const imageData = await response.arrayBuffer();
-						const output = await doOCR(language, Buffer.from(imageData));
-						const responseLLM = await sendSimpleRequestToClaude(
-							`${output}
-              Fix the output from that OCR output and return just the text that feels unimportant (like from a UI). Write an English tldr after`
+						const responseLLM = await sendRequestWithImageToClaude(
+							`Explain what's on this image like an OCR engine would but make it easy to parse what's on the image. Keep it short and on what seems important.`,
+							imageData,
+							guessMediaType(fileUrl)
 						);
 						const LLMTextOutput = responseLLM.content[0].text;
 						handleResponse(
@@ -588,6 +610,12 @@ Here are the commands you can use:
 
 				explainContextClaude(db.collection("books"), `${target?.length > 0 ? target : "@" + msg.from.username}`)
 					.then((context) => {
+						textToSpeech(context).then(async (file) => {
+							await bot.sendAudio(chatId, file);
+							if (fs.existsSync(file)) {
+								fs.rmSync(file.substring(0, mypath.lastIndexOf("/")), { recursive: true, force: true });
+							}
+						});
 						handleResponse(`<blockquote expandable>${context}</blockquote>`, msg, chatId, myCache, bot, null).catch((err) => {
 							console.error(err);
 						});
@@ -599,8 +627,8 @@ Here are the commands you can use:
 				break;
 			case "/addtoglossary":
 				const glossaryCollection = db.collection("glossary");
-				const arguments = msg.text.split(" ").slice(1).join(" ").split(":");
-				if (arguments.length != 2) {
+				const args = msg.text.split(" ").slice(1).join(" ").split(":");
+				if (args.length != 2) {
 					handleResponse(
 						"Wrong format, should be /addGlossary word : definition. You can edit your message with the correction.",
 						msg,
@@ -612,8 +640,8 @@ Here are the commands you can use:
 						console.error(err);
 					});
 				} else {
-					const word = arguments[0];
-					const definition = arguments[1];
+					const word = args[0];
+					const definition = args[1];
 					const elementId = (Math.random() + 1).toString(36).substring(7);
 					const document = {
 						word,
@@ -833,6 +861,66 @@ Here are the commands you can use:
 					chat_id: msg.chat.id,
 				});
 				break;
+			case "/voiceTarot1":
+			case "/voiceTarot3":
+			case "/voiceTarot10": {
+				const cardsToDraw = Number(msg.text.split("tarot")[1]) || 3;
+				const userQuestion = msg.text.split(" ").splice(1).join(" ");
+				const { slideshowPath, reading, imagePaths } = await getReading(cardsToDraw);
+				const fileOptions = {
+					filename: "video.mp4",
+					contentType: "video/mp4",
+				};
+				const voiceMap = {
+					Dasha: "v2/en_speaker_9",
+					Anna: "v2/en_speaker_2",
+				};
+
+				const llmRequest = `
+					Generate a tarot reading for ${[msg.from.first_name, msg.from.last_name].join(" ").trim()} (@${msg.from.username}) based on these cards: ${reading.join(",")}.
+
+					The response MUST be a valid JSON array of objects, with no introductory text or markdown formatting around the JSON itself.
+
+					Each object in the array represents a turn in a conversation and must contain two keys:
+					1. "speaker": A string with the value "Dasha" or "Anna".
+					2. "text": A string containing their dialogue. The text in this field should be formatted for Telegram's HTML parse mode (e.g., using <b> for bold, <i> for italics).
+
+					Here is an example of the required format:
+					\`\`\`json
+					[
+					{ "speaker": "Dasha", "text": "Okay, so like, for the querent, the first card is The Tower. It’s giving… <b>catastrophe</b>." },
+					{ "speaker": "Anna", "text": "Literally. A complete and utter systems collapse. Very chic, actually. It means you get to rebuild from the ashes." },
+					{ "speaker": "Dasha", "text": "Right. And then they got the Ten of Swords. So, total annihilation, betrayal, rock bottom. But, like, in a <i>cleansing</i> way?" },
+					{ "speaker": "Anna", "text": "It’s the end of a cycle. You have to hit the bottom to have a big bounce-back. It’s pure potentiality." }
+					]
+					\`\`\`
+
+					The content of the conversation should be a tarot reading performed by Dasha Nekrasova and Anna Khachiyan from the Red Scare podcast.
+					
+					${userQuestion.trim().length > 0 ? `The reading should address this specific question: "${userQuestion}"` : ""}
+
+					Guidelines for the conversation content:
+					- It should include their typical banter, cultural references, and sardonic tone.
+					- They must directly address ${msg.from.username ? `@${msg.from.username}` : "the querent"} during the reading.
+					- Interpret each card's meaning in relation to the others.
+					- Maintain the nihilistic yet insightful tone of the podcast.
+					- Include references to psychoanalysis, cultural theory, or art when relevant.
+					- End with some form of conclusion about the querent's situation.
+					- DO NOT say that something is "very [insert thinker's name]" in the tarot cards.
+					- If there's a natural opportunity for a clever wordplay or joke related to the querent's name that fits the reading's context, include it, but do not force it.
+					- The dialogue should include non-verbal cues for text-to-speech. Use bracketed text for actions like [laughter], [laughs], [sighs], [gasps], [clears throat], or [music]. Use em dashes (—) or ellipses (...) for hesitations, ♪ for song lyrics, and CAPITALIZATION for emphasizing a word.
+					`;
+
+				const interpretation = await sendSimpleRequestToClaude(llmRequest);
+				const conversationData = JSON.parse(interpretation.content[0].text).map((sentence) => {
+					sentence.voice = voiceMap[sentence.speaker];
+					return sentence;
+				});
+				console.log(conversationData);
+				const outputFile = await createConversationAudio(conversationData, "data/" + makeid() + "_tarot.wav");
+				await bot.sendAudio(chatId, outputFile);
+				break;
+			}
 		}
 	} catch (err) {
 		console.error(err);

@@ -136,3 +136,8 @@ books/*.txt
 .categories.js
 trivia-data/*json
 *.binlog
+
+*.onnx*
+
+*venv*
+data/*

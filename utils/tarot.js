@@ -6,7 +6,6 @@ const os = require("os");
 function getReading(count) {
 	return new Promise(async (resolve, reject) => {
 		const tarotCards = cards;
-		console.log(tarotCards.length);
 		const shuffledCards = tarotCards.sort(() => Math.random() - 0.5);
 		const selectedCards = shuffledCards.slice(0, count);
 		const reading = selectedCards.map((card) => ({
