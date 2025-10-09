@@ -141,3 +141,4 @@ trivia-data/*json
 
 *venv*
 data/*
+*.wav

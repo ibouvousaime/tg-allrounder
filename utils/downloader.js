@@ -114,7 +114,6 @@ async function getSpotifyMusicLink(link) {
 			const albumData = await SpottyDL.getAlbum(fullLink);
 			const fullAlbumName = `${albumData.artist} - ${albumData.name}}`;
 			const youtubeAlbums = await ytmusic.searchAlbums(fullAlbumName);
-			console.log(youtubeAlbums);
 			return { spotifyConvertedLink: `https://music.youtube.com/playlist?list=${youtubeAlbums[0].playlistId}`, name: fullAlbumName };
 		}
 	} else return { spotifyConvertedLink: null, name: null };

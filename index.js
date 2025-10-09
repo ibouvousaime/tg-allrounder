@@ -117,7 +117,7 @@ bot.on("poll", async (msg) => {
 
 bot.on("text", async (msg) => {
 	const chatId = msg.chat.id;
-	const text = msg.text;
+	const text = msg.text || msg.caption;
 	const videoExtensions = [".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm", ".mkv"];
 	const imageExtensions = ["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp", "tiff", "ico", "avif", "apng"];
 	if (
@@ -149,66 +149,67 @@ bot.on("text", async (msg) => {
 
 	const tweetId = extractTweetId(msg.text);
 	if (tweetId) {
-		//	if (msg.link_preview_options?.is_disabled) {
-		const tweetData = await extractTweet(msg.text);
-		if (tweetData) {
-			const tweetText = `<blockquote expandable>${tweetData?.fullText} \nTweet by ${tweetData?.tweetBy?.fullName || ""} (@${tweetData?.tweetBy?.userName}) on ${tweetData?.createdAt || ""} </blockquote>`;
-			tweetData.media = tweetData.media || [];
-			tweetData.media = await Promise.all(
-				tweetData.media.map((media) => {
-					return new Promise(async (resolve, reject) => {
-						try {
-							media.url = await downloadImageAsBuffer(media.url);
-							resolve(media);
-						} catch (err) {
-							reject(err);
+		if (!text.includes("no preview")) {
+			const tweetData = await extractTweet(msg.text);
+			if (tweetData) {
+				const tweetText = `<blockquote expandable>${tweetData?.fullText} \nTweet by ${tweetData?.tweetBy?.fullName || ""} (@${tweetData?.tweetBy?.userName}) on ${tweetData?.createdAt || ""} </blockquote>`;
+				tweetData.media = tweetData.media || [];
+				tweetData.media = await Promise.all(
+					tweetData.media.map((media) => {
+						return new Promise(async (resolve, reject) => {
+							try {
+								media.url = await downloadImageAsBuffer(media.url);
+								resolve(media);
+							} catch (err) {
+								reject(err);
+							}
+						});
+					})
+				);
+				const media = tweetData.media;
+				const mediaCount = media?.length || 0;
+
+				const messageOptions = {
+					parse_mode: "HTML",
+					disable_web_page_preview: true,
+					has_spoiler: text.includes("spoiler"),
+				};
+
+				try {
+					if (mediaCount === 0) {
+						bot.sendMessage(chatId, tweetText, messageOptions);
+					} else if (mediaCount === 1) {
+						const singleMedia = media[0];
+						const optionsWithCaption = { ...messageOptions, caption: tweetText };
+
+						if (singleMedia.type === "VIDEO") {
+							bot.sendVideo(chatId, singleMedia.url, optionsWithCaption);
+						} else {
+							bot.sendPhoto(chatId, singleMedia.url, optionsWithCaption);
 						}
-					});
-				})
-			);
-			const media = tweetData.media;
-			const mediaCount = media?.length || 0;
-
-			const messageOptions = {
-				parse_mode: "HTML",
-				disable_web_page_preview: true,
-			};
-
-			try {
-				if (mediaCount === 0) {
-					bot.sendMessage(chatId, tweetText, messageOptions);
-				} else if (mediaCount === 1) {
-					const singleMedia = media[0];
-					const optionsWithCaption = { ...messageOptions, caption: tweetText };
-
-					if (singleMedia.type === "VIDEO") {
-						bot.sendVideo(chatId, singleMedia.url, optionsWithCaption);
+					} else if (mediaCount > 1 && mediaCount <= 10) {
+						const mediaGroup = media.map((item, index) => ({
+							type: item.type.toLowerCase(),
+							media: item.url,
+							...(index === 0 && { caption: tweetText, parse_mode: "HTML" }),
+						}));
+						bot.sendMediaGroup(chatId, mediaGroup);
 					} else {
-						bot.sendPhoto(chatId, singleMedia.url, optionsWithCaption);
-					}
-				} else if (mediaCount > 1 && mediaCount <= 10) {
-					const mediaGroup = media.map((item, index) => ({
-						type: item.type.toLowerCase(),
-						media: item.url,
-						...(index === 0 && { caption: tweetText, parse_mode: "HTML" }),
-					}));
-					bot.sendMediaGroup(chatId, mediaGroup);
-				} else {
-					for (const item of media) {
-						if (item.type === "VIDEO") {
-							await bot.sendVideo(chatId, item.url);
-						} else if (item.type === "PHOTO") {
-							await bot.sendPhoto(chatId, item.url);
+						for (const item of media) {
+							if (item.type === "VIDEO") {
+								await bot.sendVideo(chatId, item.url);
+							} else if (item.type === "PHOTO") {
+								await bot.sendPhoto(chatId, item.url);
+							}
 						}
+						bot.sendMessage(chatId, tweetText, messageOptions);
 					}
-					bot.sendMessage(chatId, tweetText, messageOptions);
+				} catch (error) {
+					console.error("Failed to send tweet media:", error);
 				}
-			} catch (error) {
-				console.error("Failed to send tweet media:", error);
 			}
 		}
 	}
-	//	}
 	if (msg.chat.type == "group" || msg.chat.type == "supergroup") {
 		const triggerWords = process.env.TRIGGER_WORDS?.split(" ") || [];
 		if (triggerWords.some((word) => text.toLowerCase().includes(word.toLowerCase()))) {
@@ -613,7 +614,7 @@ Here are the commands you can use:
 						textToSpeech(context).then(async (file) => {
 							await bot.sendAudio(chatId, file);
 							if (fs.existsSync(file)) {
-								fs.rmSync(file.substring(0, mypath.lastIndexOf("/")), { recursive: true, force: true });
+								fs.rmSync(file.substring(0, file.lastIndexOf("/")), { recursive: true, force: true });
 							}
 						});
 						handleResponse(`<blockquote expandable>${context}</blockquote>`, msg, chatId, myCache, bot, null).catch((err) => {
@@ -872,10 +873,9 @@ Here are the commands you can use:
 					contentType: "video/mp4",
 				};
 				const voiceMap = {
-					Dasha: "v2/en_speaker_9",
-					Anna: "v2/en_speaker_2",
+					Dasha: "en_US-kathleen-low",
+					Anna: "en_US-hfc_female-medium",
 				};
-
 				const llmRequest = `
 					Generate a tarot reading for ${[msg.from.first_name, msg.from.last_name].join(" ").trim()} (@${msg.from.username}) based on these cards: ${reading.join(",")}.
 
