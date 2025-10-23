@@ -52,6 +52,8 @@ const client = new MongoClient(mongoUri, {
 
 const db = client.db("messages");
 const collection = db.collection("messages");
+const musicCollection = db.collection("music");
+
 const { Convert } = require("easy-currencies");
 const { extractAndConvertToCm } = require("./utils/converter");
 const { eyeWords, reactToTelegramMessage, bannedWords, nerdwords, sendPoll } = require("./utils/reactions");
@@ -63,16 +65,62 @@ const { sendRandomQuizz } = require("./utils/quizz");
 const { getPollResults } = require("./utils/telegram_polls");
 const { getReading } = require("./utils/tarot");
 const { MaxPool3DGrad } = require("@tensorflow/tfjs");
-const { extractAndEchoSocialLink, getSpotifyMusicLink, downloadImageAsBuffer } = require("./utils/downloader");
+const { extractAndEchoSocialLink, getSpotifyMusicLink, downloadImageAsBuffer, getAlbumFromSong, downloadVideoFromUrl } = require("./utils/downloader");
 const { findDirectArchiveLink } = require("./utils/web");
 const { textToSpeech, createConversationAudio } = require("./utils/tts");
 const { makeid } = require("./utils/util");
+const { getMusicStats } = require("./utils/music");
 
 const myCache = new NodeCache();
+const axios = require("axios");
+
+axios
+	.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/setMyCommands`, {
+		commands: [
+			{ command: "help", description: "Display help message with all commands" },
+			{ command: "8ball", description: "Get a Magic 8-Ball response" },
+			{ command: "coinflip", description: "Flip a coin" },
+			{ command: "calc", description: "Calculate mathematical expressions" },
+			{ command: "when", description: "Show message date - reply to message" },
+			{ command: "weather", description: "Get weather in Celsius" },
+			{ command: "trans", description: "Translate text to another language" },
+			{ command: "etymology", description: "Get word etymology" },
+			{ command: "unsplash", description: "Generate quote image - reply to message" },
+			{ command: "ocr", description: "Extract text from image - reply to image" },
+			{ command: "wordcloud", description: "Generate word cloud from recent messages" },
+			{ command: "createsticker", description: "Create sticker from image with emojis" },
+			{ command: "dream", description: "Get dream interpretation" },
+			{ command: "oracle", description: "Get oracle reading with audio" },
+			{ command: "tldr", description: "Summarize webpage or article" },
+			{ command: "archive", description: "Get archive.org link for URL" },
+			{ command: "tarot1", description: "Single card tarot reading" },
+			{ command: "tarot3", description: "Three card tarot reading" },
+			{ command: "tarot10", description: "Ten card tarot reading" },
+			{ command: "musicstats", description: "View music statistics" },
+			{ command: "findalbum", description: "Find album for audio track - reply to audio" },
+			{ command: "regex", description: "Search messages by regex pattern" },
+			{ command: "count", description: "Count message occurrences" },
+			{ command: "glossary", description: "Search glossary" },
+			{ command: "addtoglossary", description: "Add word to glossary with definition" },
+			{ command: "download", description: "Reply to a message with a URL to download a video or do /download <url>" },
+
+			{ command: "cc", description: "Convert currency" },
+		],
+	})
+	.then(() => {
+		console.log("Bot commands registered successfully");
+	})
+	.catch((err) => {
+		console.error("Failed to register bot commands:", err);
+	});
+
 bot.on("edited_message", async (msg) => {
 	const chatId = msg.chat.id;
 	const text = msg.text || "";
 	collection.updateOne({ chatId: chatId, messageId: msg.message_id }, { $set: { text: msg.text } });
+	if (msg.audio?.title && msg.audio?.performer) {
+		await storeMusicInDB(msg.audio, msg);
+	}
 	if (
 		msg.chat.type == "private" &&
 		!process.env.ALLOWED_TO_DM_BOT.split(" ")
@@ -83,10 +131,7 @@ bot.on("edited_message", async (msg) => {
 	}
 	handleMessages({ chatId, msg, text, messageID: msg.message_id });
 });
-function containsWord(str, word) {
-	const regex = new RegExp(`\\b${word}\\b`, "i");
-	return regex.test(str);
-}
+
 function getAdminsIds(chatId) {
 	return new Promise(async (resolve, reject) => {
 		try {
@@ -105,135 +150,182 @@ function getAdminsIds(chatId) {
 	});
 }
 
-/* setInterval(() => {
-	bot.getUpdates({ allowed_updates: ["poll", "poll_answer"] }).then((updates) => {
-		console.log("poll updates", updates);
-	});
-}, 3000); */
-
 bot.on("poll", async (msg) => {
 	console.log(msg);
 });
 
-bot.on("text", async (msg) => {
-	const chatId = msg.chat.id;
-	const text = msg.text || msg.caption;
-	const videoExtensions = [".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm", ".mkv"];
-	const imageExtensions = ["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp", "tiff", "ico", "avif", "apng"];
-	if (
-		msg.chat.type == "private" &&
-		!process.env.ALLOWED_TO_DM_BOT.split(" ")
-			.map((userid) => Number(userid))
-			.includes(msg.from.id)
-	) {
-		return;
-	}
+function isUserAllowedToDM(userId) {
+	const allowedUsers = process.env.ALLOWED_TO_DM_BOT.split(" ").map((userid) => Number(userid));
+	return allowedUsers.includes(userId);
+}
+const videoExtensions = [".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm", ".mkv"];
+
+async function handleSocialMediaLinks(text, chatId, messageId, msg) {
 	extractAndEchoSocialLink(text, (output) => {
 		if (Array.isArray(output)) {
 			output.forEach((media) => {
-				fs.readFile(media, (err, data) => {
+				fs.readFile(media, async (err, data) => {
 					if (err) {
 						console.error("error reading file:", media, err);
 						return;
 					}
 					const isVideo = videoExtensions.some((videoext) => media.endsWith(videoext));
 					if (isVideo) {
-						bot.sendVideo(chatId, data, { reply_to_message_id: msg.message_id });
+						bot.sendVideo(chatId, data, { reply_to_message_id: messageId });
 					} else {
-						bot.sendAudio(chatId, data, { reply_to_message_id: msg.message_id });
+						const sentAudio = await bot.sendAudio(chatId, data, { reply_to_message_id: messageId });
+						storeMusicInDB(sentAudio.audio, sentAudio, msg.from);
 					}
 				});
 			});
 		}
 	});
+}
 
-	const tweetId = extractTweetId(msg.text);
-	if (tweetId) {
-		if (!text.includes("no preview")) {
-			const tweetData = await extractTweet(msg.text);
-			if (tweetData) {
-				const tweetText = `<blockquote expandable>${tweetData?.fullText} \nTweet by ${tweetData?.tweetBy?.fullName || ""} (@${tweetData?.tweetBy?.userName}) on ${tweetData?.createdAt || ""} </blockquote>`;
-				tweetData.media = tweetData.media || [];
-				tweetData.media = await Promise.all(
-					tweetData.media.map((media) => {
-						return new Promise(async (resolve, reject) => {
-							try {
-								media.url = await downloadImageAsBuffer(media.url);
-								resolve(media);
-							} catch (err) {
-								reject(err);
-							}
-						});
-					})
-				);
-				const media = tweetData.media;
-				const mediaCount = media?.length || 0;
+async function handleTweetPreview(msg, text, chatId) {
+	const tweetId = extractTweetId(text);
+	if (!tweetId || text.includes("no preview")) {
+		return;
+	}
 
-				const messageOptions = {
-					parse_mode: "HTML",
-					disable_web_page_preview: true,
-					has_spoiler: text.includes("spoiler"),
-				};
+	try {
+		const tweetData = await extractTweet(text);
+		if (!tweetData) return;
 
-				try {
-					if (mediaCount === 0) {
-						bot.sendMessage(chatId, tweetText, messageOptions);
-					} else if (mediaCount === 1) {
-						const singleMedia = media[0];
-						const optionsWithCaption = { ...messageOptions, caption: tweetText };
+		const tweetText = `<blockquote expandable>${tweetData?.fullText} \nTweet by ${tweetData?.tweetBy?.fullName || ""} (@${tweetData?.tweetBy?.userName}) on ${tweetData?.createdAt || ""} </blockquote>`;
 
-						if (singleMedia.type === "VIDEO") {
-							bot.sendVideo(chatId, singleMedia.url, optionsWithCaption);
-						} else {
-							bot.sendPhoto(chatId, singleMedia.url, optionsWithCaption);
-						}
-					} else if (mediaCount > 1 && mediaCount <= 10) {
-						const mediaGroup = media.map((item, index) => ({
-							type: item.type.toLowerCase(),
-							media: item.url,
-							...(index === 0 && { caption: tweetText, parse_mode: "HTML" }),
-						}));
-						bot.sendMediaGroup(chatId, mediaGroup);
-					} else {
-						for (const item of media) {
-							if (item.type === "VIDEO") {
-								await bot.sendVideo(chatId, item.url);
-							} else if (item.type === "PHOTO") {
-								await bot.sendPhoto(chatId, item.url);
-							}
-						}
-						bot.sendMessage(chatId, tweetText, messageOptions);
+		tweetData.media = tweetData.media || [];
+		tweetData.media = await Promise.all(
+			tweetData.media.map((media) => {
+				return new Promise(async (resolve, reject) => {
+					try {
+						media.url = await downloadImageAsBuffer(media.url);
+						resolve(media);
+					} catch (err) {
+						reject(err);
 					}
-				} catch (error) {
-					console.error("Failed to send tweet media:", error);
+				});
+			})
+		);
+
+		const media = tweetData.media;
+		const mediaCount = media?.length || 0;
+
+		const messageOptions = {
+			parse_mode: "HTML",
+			disable_web_page_preview: true,
+			has_spoiler: text.includes("spoiler"),
+		};
+
+		if (mediaCount === 0) {
+			bot.sendMessage(chatId, tweetText, messageOptions);
+		} else if (mediaCount === 1) {
+			const singleMedia = media[0];
+			const optionsWithCaption = { ...messageOptions, caption: tweetText };
+
+			if (singleMedia.type === "VIDEO") {
+				bot.sendVideo(chatId, singleMedia.url, optionsWithCaption);
+			} else {
+				bot.sendPhoto(chatId, singleMedia.url, optionsWithCaption);
+			}
+		} else if (mediaCount > 1 && mediaCount <= 10) {
+			const mediaGroup = media.map((item, index) => ({
+				type: item.type.toLowerCase(),
+				media: item.url,
+				...(index === 0 && { caption: tweetText, parse_mode: "HTML" }),
+			}));
+			bot.sendMediaGroup(chatId, mediaGroup);
+		} else {
+			for (const item of media) {
+				if (item.type === "VIDEO") {
+					await bot.sendVideo(chatId, item.url);
+				} else if (item.type === "PHOTO") {
+					await bot.sendPhoto(chatId, item.url);
 				}
 			}
+			bot.sendMessage(chatId, tweetText, messageOptions);
 		}
+	} catch (error) {
+		console.error("Failed to send tweet media:", error);
 	}
-	if (msg.chat.type == "group" || msg.chat.type == "supergroup") {
-		const triggerWords = process.env.TRIGGER_WORDS?.split(" ") || [];
-		if (triggerWords.some((word) => text.toLowerCase().includes(word.toLowerCase()))) {
-			await bot.sendMessage(process.env.LogChat, `https://t.me/c/${msg.chat.id.toString().slice(4)}/${msg.message_id}`);
-			await bot.forwardMessage(process.env.LogChat, chatId, msg.message_id);
-		}
+}
+
+async function handleTriggerWordLogging(msg, text, chatId) {
+	if (msg.chat.type !== "group" && msg.chat.type !== "supergroup") {
+		return;
 	}
 
-	const sender = msg.from;
+	const triggerWords = process.env.TRIGGER_WORDS?.split(" ") || [];
+	if (triggerWords.some((word) => text.toLowerCase().includes(word.toLowerCase()))) {
+		await bot.sendMessage(process.env.LogChat, `https://t.me/c/${msg.chat.id.toString().slice(4)}/${msg.message_id}`);
+		await bot.forwardMessage(process.env.LogChat, chatId, msg.message_id);
+	}
+}
+
+async function storeMessageInDB(msg, chatId) {
+	if (!msg.text || msg.text?.trim()?.startsWith("/")) {
+		return;
+	}
+
 	const newMessage = {
 		chatId: chatId,
 		messageId: msg.message_id,
 		text: msg.text,
-		date: msg.date,
+		date: new Date(msg.date * 1000),
 		sender: [msg.from.first_name, msg.from.last_name].join(" "),
 	};
-	if (msg.text && !msg.text?.trim()?.startsWith("/")) {
-		newMessage.date = new Date(newMessage.date * 1000);
-		collection.insertOne({ ...newMessage }).catch((err) => {
+
+	collection.insertOne({ ...newMessage }).catch((err) => {
+		console.error(err);
+	});
+}
+
+async function storeMusicInDB(audio, msg, actualSender) {
+	msg.from = actualSender ? actualSender : msg.from;
+	const alreadyExists = await collection.findOne({ messageId: msg.messageId });
+	if (!alreadyExists) {
+		const musicData = {
+			chatId: msg.chat.id,
+			messageId: msg.messageId,
+			file_name: audio.file_name,
+			title: audio.title,
+			performer: audio.performer,
+			date: new Date(msg.date * 1000),
+			sender: [msg.from.first_name, msg.from.last_name].join(" "),
+		};
+
+		musicCollection.insertOne({ ...musicData }).catch((err) => {
 			console.error(err);
 		});
 	}
-	if (text.trim()[0] != "/") return;
-	handleMessages({ chatId, text, msg, sender });
+}
+
+bot.on("audio", async (msg) => {
+	if (msg.audio?.title && msg.audio?.performer) {
+		await storeMusicInDB(msg.audio, msg);
+	}
+});
+
+bot.on("text", async (msg) => {
+	const chatId = msg.chat.id;
+	const text = msg.text || msg.caption;
+
+	if (msg.chat.type === "private" && !isUserAllowedToDM(msg.from.id)) {
+		return;
+	}
+
+	await handleSocialMediaLinks(text, chatId, msg.message_id, msg);
+
+	await handleTweetPreview(msg, text, chatId);
+
+	await handleTriggerWordLogging(msg, text, chatId);
+
+	await storeMessageInDB(msg, chatId);
+
+	if (text.trim()[0] === "/") {
+		const sender = msg.from;
+		handleMessages({ chatId, text, msg, sender });
+	}
 });
 function getRandomElement(arr) {
 	const randomIndex = Math.floor(Math.random() * arr.length);
@@ -244,24 +336,65 @@ async function handleMessages({ chatId, msg, text, sender }) {
 	try {
 		switch (text.split(" ")[0].split("@")[0]) {
 			case "/help":
-				const message = `Welcome! 🤖
+				const message = `<blockquote expandable>Welcome! 🤖
 
 Here are the commands you can use:
 
-/weather - Get current weather information. Simply type <code>/weather [city name]</code> to get the latest weather update for your location.
+<b>General Commands:</b>
+/help - Display this help message
+/8ball - Get a Magic 8-Ball response (also /interview)
+/coinflip - Flip a coin (also /cf)
+/calc - Calculate mathematical expressions
+/when - Show message date and original forward date
 
-/trans - Translate text to different languages. Use <code>/trans :[language code] [text]</code> to get your translation. Example: <code>/trans :es Hello</code> to translate "Hello" to Spanish.
+<b>Weather & Location:</b>
+/weather [city] - Get weather in Celsius
+/weatherf [city] - Get weather in Fahrenheit
 
-/unsplash - Generate a quote image. Reply to a message with <code>/unsplash</code> to create a beautiful image with the quoted text.
+<b>Translation & Language:</b>
+/trans :[lang] [text] - Translate text (also /cis)
+/etymology [word] - Get word etymology
 
-/coinflip - Flip a coin. Use <code>/coinflip</code> to flip a virtual coin and get heads or tails.
+<b>Image & Media:</b>
+/unsplash - Generate quote image (reply to message)
+/ocr - Extract text from image (reply to image)
+/wordcloud - Generate word cloud from recent messages
+/removebg - Remove background or delete sticker (also /rmbg, /deletesticker)
+/createsticker [emojis] - Create sticker from image (also /addsticker)
+
+<b>AI & Analysis:</b>
+/dream - Get dream interpretation
+/oracle [target] - Get oracle reading with audio
+/tldr - Summarize webpage or article
+/archive - Get archive.org link for URL
+
+<b>Tarot Readings:</b>
+/tarot1 - Single card reading
+/tarot3 - Three card reading
+/tarot10 - Ten card reading
 
 
-/ocr - Perform Optical Character Recognition (OCR). Reply to an image with <code>/ocr</code> to extract text from the image.
+<b>Music:</b>
+/musicStats - View music statistics
+/findAlbum - Find album for audio track (reply to audio)
 
-/wordcloud - Generate a word cloud image from the last 100 messages. Use <code>/wordcloud</code> to create a word cloud from recent text.
+<b>Search & Database:</b>
+/regex [pattern] - Search messages by regex
+/count [pattern] - Count message occurrences
+/glossary [word] - Search glossary
+/addtoglossary word : definition - Add to glossary
+/deleteFromGlossary [id] - Delete from glossary
 
+<b>Admin & Polls:</b>
+/delete - Delete message and reply
+/invite [name] - Create invite poll
+/voteban [name] - Create ban poll
+
+<b>Currency:</b>
+/cc [amount] [from] to [to] - Convert currency (also /currencyConvert)
+</blockquote>
 `;
+
 				handleResponse(message, msg, chatId, myCache, bot, null).catch((err) => {
 					console.error(err);
 				});
@@ -303,6 +436,31 @@ Here are the commands you can use:
 					});
 
 				break;
+
+			case "/download": {
+				const downloadLinkStr = [msg.reply_to_message?.text || "", msg.text].join(" ");
+				downloadVideoFromUrl(downloadLinkStr, (output) => {
+					const messageId = msg.messageId;
+					if (Array.isArray(output)) {
+						output.forEach((media) => {
+							fs.readFile(media, async (err, data) => {
+								if (err) {
+									console.error("error reading file:", media, err);
+									return;
+								}
+								const isVideo = videoExtensions.some((videoext) => media.endsWith(videoext));
+								if (isVideo) {
+									bot.sendVideo(chatId, data, { reply_to_message_id: messageId });
+								} else {
+									const sentAudio = await bot.sendAudio(chatId, data, { reply_to_message_id: messageId });
+									storeMusicInDB(sentAudio.audio, sentAudio, msg.from);
+								}
+							});
+						});
+					}
+				});
+				break;
+			}
 			case "/calc":
 				const expression = msg.text.split(" ").slice(1).join(" ");
 				let result = math.evaluate(expression);
@@ -345,10 +503,9 @@ Here are the commands you can use:
 				});
 				break;
 			case "/ocr":
-				let language = text.split(" ")[1]?.trim();
-				if (msg.reply_to_message && msg.reply_to_message.photo) {
+				if (msg.reply_to_message && (msg.reply_to_message.photo || msg.reply_to_message.sticker)) {
 					const photoArray = msg.reply_to_message.photo;
-					const highestQualityPhoto = photoArray[photoArray.length - 1];
+					const highestQualityPhoto = photoArray ? photoArray[photoArray.length - 1] : msg.reply_to_message.sticker;
 					bot.getFile(highestQualityPhoto.file_id).then(async (file) => {
 						const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
 						const response = await fetch(fileUrl);
@@ -366,7 +523,7 @@ Here are the commands you can use:
 								.replace(/"/g, "&quot;")
 								.replace(/'/g, "&#39;")}</blockquote>`,
 							msg,
-							chatId,
+							msg.chat.id,
 							myCache,
 							bot,
 							null
@@ -534,10 +691,9 @@ Here are the commands you can use:
 					await bot.sendMessage(msg.chat.id, "no, ur not my dad");
 					return;
 				}
-				const chatID = chatId.toString().slice(4);
 
 				if (msg.reply_to_message?.sticker) {
-					if (!msg.reply_to_message?.sticker?.set_name.includes(chatID) && msg.chat.type != "private") {
+					if (!msg.reply_to_message?.sticker?.set_name.includes(chatId) && msg.chat.type != "private") {
 						await bot.sendMessage(msg.chat.id, "no, wtf");
 						return;
 					}
@@ -560,7 +716,6 @@ Here are the commands you can use:
 					const highestQualityPhoto = photoArray ? photoArray[photoArray.length - 1] : msg.reply_to_message.sticker || msg.reply_to_message.document;
 					bot.getFile(highestQualityPhoto.file_id).then(async (file) => {
 						const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
-						const chatId = msg.chat.id;
 						const imageResponse = await fetch(fileUrl);
 						const arrayBuffer = await imageResponse.arrayBuffer();
 						const imageBuffer = Buffer.from(arrayBuffer);
@@ -862,7 +1017,21 @@ Here are the commands you can use:
 					chat_id: msg.chat.id,
 				});
 				break;
-			case "/voiceTarot1":
+			case "/musicstats":
+				const stats = await getMusicStats(musicCollection, msg.chat.id);
+				await bot.sendMessage(msg.chat.id, `<blockquote expandable>${stats}</blockquote>`, {
+					parse_mode: "HTML",
+				});
+				break;
+			case "/findalbum":
+				if (msg.reply_to_message.audio) {
+					const audio = msg.reply_to_message.audio;
+					const fullMusicName = `${audio.performer} - ${audio.title}`;
+					const output = await getAlbumFromSong(fullMusicName);
+					await bot.sendMessage(msg.chat.id, `<a href="${output.albumLink}">${output.name}</a>`, { parse_mode: "HTML", reply_to_message_id: msg.messageId });
+				}
+				break;
+			/* case "/voiceTarot1":
 			case "/voiceTarot3":
 			case "/voiceTarot10": {
 				const cardsToDraw = Number(msg.text.split("tarot")[1]) || 3;
@@ -920,7 +1089,7 @@ Here are the commands you can use:
 				const outputFile = await createConversationAudio(conversationData, "data/" + makeid() + "_tarot.wav");
 				await bot.sendAudio(chatId, outputFile);
 				break;
-			}
+			} */
 		}
 	} catch (err) {
 		console.error(err);

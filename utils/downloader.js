@@ -32,12 +32,17 @@ async function extractAndEchoSocialLink(text, callback) {
 	}
 
 	const link = match[0];
-	console.log(`Found link: ${link}`);
 
 	const destinationFolder = path.join(os.tmpdir(), makeid(20));
-	//const filePath = path.join(destinationFolder, `${filename}.%(ext)s`);
 	fs.mkdirSync(destinationFolder);
-	const ytDlpCommand = `${os.homedir()}/.local/bin/yt-dlp --embed-metadata "${link}" -P  "${destinationFolder}" ${audioMode ? '-x --audio-format mp3 -f "bestaudio/best"' : '-f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"'} --cookies ${os.homedir()}/cookies.txt`;
+	const ytDlpCommand = [
+		`${os.homedir()}/.local/bin/yt-dlp`,
+		`--embed-metadata`,
+		`"${link}"`,
+		`-P "${destinationFolder}"`,
+		audioMode ? '-x --audio-format mp3 -f "bestaudio/best"' : '-f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"',
+		`--cookies ${os.homedir()}/cookies.txt`,
+	].join(" ");
 	const galleryDlCommand = `${os.homedir()}/.local/bin/gallery-dl "${link}" --dest "${destinationFolder}" --cookies ${os.homedir()}/cookies.txt`;
 	console.log(ytDlpCommand);
 	try {
@@ -60,6 +65,48 @@ async function extractAndEchoSocialLink(text, callback) {
 	} catch (error) {
 		console.log(galleryDlCommand);
 		console.error(`All download attempts failed: ${error}`);
+	} finally {
+		if (fs.existsSync(destinationFolder)) {
+			fs.rmSync(destinationFolder, { recursive: true, force: true });
+		}
+	}
+}
+
+async function downloadVideoFromUrl(text, callback) {
+	const urlRegex = /(https?:\/\/[^\s]+)/;
+	const match = text.match(urlRegex);
+
+	if (!match || !match[0]) {
+		console.error("No URL found in the provided text.");
+		return;
+	}
+
+	const link = match[0];
+	console.log("found", link);
+	const destinationFolder = path.join(os.tmpdir(), makeid(20));
+	fs.mkdirSync(destinationFolder);
+
+	const ytDlpCommand = [
+		`${os.homedir()}/.local/bin/yt-dlp`,
+		`--embed-metadata`,
+		`"${link}"`,
+		`-P "${destinationFolder}"`,
+		'-f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"',
+		`--cookies ${os.homedir()}/cookies.txt`,
+	].join(" ");
+
+	try {
+		await execPromise(ytDlpCommand);
+
+		const files = getAllFilesSync(destinationFolder);
+
+		if (files && files.length > 0) {
+			await callback(files);
+		} else {
+			console.error("no files found after download command");
+		}
+	} catch (error) {
+		console.error(`download error: "${link}":`, error);
 	} finally {
 		if (fs.existsSync(destinationFolder)) {
 			fs.rmSync(destinationFolder, { recursive: true, force: true });
@@ -119,6 +166,17 @@ async function getSpotifyMusicLink(link) {
 	} else return { spotifyConvertedLink: null, name: null };
 }
 
+async function getAlbumFromSong(songName) {
+	const YTMusic = await loadMusicModule();
+	const ytmusic = new YTMusic();
+	await ytmusic.initialize();
+	const youtubeAlbums = await ytmusic.searchAlbums(songName);
+	return {
+		albumLink: `https://music.youtube.com/playlist?list=${youtubeAlbums[0].playlistId}`,
+		name: `${youtubeAlbums[0].artist.name} - ${youtubeAlbums[0].name}`,
+	};
+}
+
 async function downloadImageAsBuffer(url) {
 	try {
 		const response = await axios.get(url, {
@@ -133,4 +191,4 @@ async function downloadImageAsBuffer(url) {
 	}
 }
 
-module.exports = { extractAndEchoSocialLink, getSpotifyMusicLink, downloadImageAsBuffer };
+module.exports = { extractAndEchoSocialLink, getSpotifyMusicLink, downloadImageAsBuffer, getAlbumFromSong, downloadVideoFromUrl };
