@@ -14,11 +14,11 @@ function generateRandomString(length) {
 function sendRandomQuizz(db, mongoCollection, chatId) {
 	return new Promise(async (resolve, reject) => {
 		const questionDoc = (await mongoCollection.aggregate([{ $sample: { size: 1 } }]).toArray())[0];
-		sendSimpleRequestToClaude(
+		sendSimpleRequestToDeepSeek(
 			`You are a trivia expert. Given the following trivia question: "${questionDoc.Question}" and its correct answer: "${questionDoc.Answer}", generate three plausible, SHORT but incorrect answers. Ensure the incorrect answers are distinct, contextually relevant, and not overly similar to the correct answer. Reply with a JSON object in the format {"IncorrectAnswers": ["answer1", "answer2", "answer3"]}.`
 		)
 			.then(async (response) => {
-				const answers = JSON.parse(response.content[0].text).IncorrectAnswers.map((answer) => answer.replace(/[^\w\s]/g, "").trim());
+				const answers = JSON.parse(response).IncorrectAnswers.map((answer) => answer.replace(/[^\w\s]/g, "").trim());
 				questionDoc.IncorrectAnswers = answers;
 				const question = {
 					question: questionDoc.Question,

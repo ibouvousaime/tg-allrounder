@@ -1,6 +1,12 @@
 const Anthropic = require("@anthropic-ai/sdk");
 const anthropic = new Anthropic({});
 
+const { OpenAI } = require("openai");
+
+const deepseekai = new OpenAI({
+	baseURL: process.env.DEEPSEEK_BASE_URL,
+	apiKey: process.env.DEEPSEEK_API_KEY,
+});
 function sendSimpleRequestToClaude(message) {
 	return anthropic.messages.create({
 		max_tokens: 1024,
@@ -51,4 +57,15 @@ function sendRequestWithImageToClaude(textMessage, imageArrayBuffer, imageMediaT
 	});
 }
 
-module.exports = { sendSimpleRequestToClaude, sendRequestWithImageToClaude, guessMediaType };
+function sendSimpleRequestToDeepSeek(message) {
+	return new Promise(async (resolve, reject) => {
+		const completion = await deepseekai.chat.completions.create({
+			model: "deepseek-reasoner",
+			messages: [{ role: "user", content: message }],
+		});
+		//response format is { data: { choices: [{ message: { content: "..." } }] } }
+		resolve(completion.choices[0].message.content);
+	});
+}
+
+module.exports = { sendSimpleRequestToClaude, sendRequestWithImageToClaude, guessMediaType, sendSimpleRequestToDeepSeek };

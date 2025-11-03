@@ -1,4 +1,4 @@
-const { sendSimpleRequestToClaude } = require("./ai");
+const { sendSimpleRequestToClaude, sendSimpleRequestToDeepSeek } = require("./ai");
 const oracleData = require("./oracle-data.json");
 const contextSize = 500;
 function getDiceNumbers() {
@@ -58,9 +58,9 @@ async function explainContextClaude(collection, destination) {
 Now, explain to ${destination} what this oracle line means for their life.
 
 `;
-		sendSimpleRequestToClaude(prompt)
+		sendSimpleRequestToDeepSeek(prompt)
 			.then((response) => {
-				resolve(response.content[0].text);
+				resolve(response);
 			})
 			.catch((err) => {
 				reject(err);
