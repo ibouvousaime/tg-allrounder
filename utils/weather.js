@@ -32,6 +32,9 @@ async function getWeather(location, degreeType = "C") {
 				high: degreeType === "C" ? apiData.forecast.forecastday[0].day.maxtemp_c : apiData.forecast.forecastday[0].day.maxtemp_f,
 				astro: apiData.forecast.forecastday[0].astro,
 				air: apiData.forecast.forecastday[0].day?.air_quality || apiData.current?.air_quality,
+				chanceOfRain: apiData.forecast.forecastday[0].day.daily_chance_of_rain,
+				chanceOfSnow: apiData.forecast.forecastday[0].day.daily_chance_of_snow,
+				totalPrecip: degreeType === "C" ? apiData.forecast.forecastday[0].day.totalprecip_mm : apiData.forecast.forecastday[0].day.totalprecip_in,
 			},
 		};
 		const formattedTextResult = getFormattedWeatherData(item);
@@ -70,6 +73,15 @@ function getFormattedWeatherData(item) {
 	];
 
 	if (item.forecast.air) lines.push(`<b>Air Quality:</b> ${formatUsEpaIndex(item.forecast.air["us-epa-index"])}`);
+
+	if (item.forecast.chanceOfRain > 0) {
+		const precipUnit = item.location.degreetype === "C" ? "mm" : "in";
+		lines.push(`<b>Rain:</b> ${item.forecast.chanceOfRain}% chance, ${item.forecast.totalPrecip}${precipUnit} expected`);
+	}
+
+	if (item.forecast.chanceOfSnow > 0) {
+		lines.push(`<b>Snow:</b> ${item.forecast.chanceOfSnow}% chance`);
+	}
 
 	return `<pre>${lines.join("\n")}</pre>`;
 }

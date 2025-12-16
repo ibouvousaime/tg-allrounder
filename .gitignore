@@ -142,3 +142,4 @@ trivia-data/*json
 *venv*
 data/*
 *.wav
+content.html

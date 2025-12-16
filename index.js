@@ -59,7 +59,7 @@ const { Convert } = require("easy-currencies");
 const { extractAndConvertToCm } = require("./utils/converter");
 const { eyeWords, reactToTelegramMessage, bannedWords, nerdwords, sendPoll } = require("./utils/reactions");
 const { getRandomOracleMessageObj, getContext, explainContextClaude } = require("./utils/oracle");
-const { generateEmbedding, findSimilarMessages, countSenders } = require("./utils/search");
+const { generateEmbedding, findSimilarMessages, countSenders, searchMessagesByEmbedding } = require("./utils/search");
 const { extractTweetId, extractTweet } = require("./utils/bird");
 const { getAndSendRandomQuestion } = require("./utils/trivia");
 const { sendRandomQuizz } = require("./utils/quizz");
@@ -75,6 +75,7 @@ const { getMusicStats } = require("./utils/music");
 const myCache = new NodeCache();
 const axios = require("axios");
 const { getWeather } = require("./utils/weather");
+const { getUserMessagesAndAnalyse } = require("./utils/political");
 
 axios
 	.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/setMyCommands`, {
@@ -101,6 +102,7 @@ axios
 			{ command: "musicstats", description: "View music statistics" },
 			{ command: "findalbum", description: "Find album for audio track - reply to audio" },
 			{ command: "regex", description: "Search messages by regex pattern" },
+			{ command: "search", description: "Semantic search for messages by meaning" },
 			{ command: "count", description: "Count message occurrences" },
 			{ command: "glossary", description: "Search glossary" },
 			{ command: "addtoglossary", description: "Add word to glossary with definition" },
@@ -415,6 +417,7 @@ Here are the commands you can use:
 
 <b>Search & Database:</b>
 /regex [pattern] - Search messages by regex
+/search [query] - Semantic search by meaning
 /count [pattern] - Count message occurrences
 /glossary [word] - Search glossary
 /addtoglossary word : definition - Add to glossary
@@ -503,6 +506,12 @@ Here are the commands you can use:
 						console.error(err);
 					});
 					break;
+				/* case "/political": {
+					const name = msg.text.split(" ").slice(1)[0];
+					const analysis = await getUserMessagesAndAnalyse(name, collection, chatId);
+					bot.sendMessage(chatId, "Output: \n" + analysis, { parse_mode: "HTML" });
+					break;
+				} */
 				case "/cc":
 				case "/currencyConvert":
 					const input = msg.text.split(" ").slice(1);
@@ -672,7 +681,7 @@ Here are the commands you can use:
 					break;
 				case "/voteban":
 					const victim = text.split(" ").slice(1).join(" ");
-					sendPoll(db, msg.chat.id, `Ban ${victim}?`, [{ text: "Yes" }, { text: "No" }], false);
+					sendPoll(db, msg.chat.id, `Ban ${victim}?`, [{ text: "Yes" }, { text: "No" }], true);
 					break;
 
 				case "/cis":
@@ -785,31 +794,36 @@ Here are the commands you can use:
 						});
 					}
 					break;
-				case "/dream":
-					let inlineDream = text.split(" ").slice(1).join(" ");
-
-					const dreamData = inlineDream + (msg.quote?.text || msg.reply_to_message?.text || msg.reply_to_message?.caption || "");
-					if (!dreamData.trim().length) return;
-					sendSimpleRequestToDeepSeek(`Pretend you're a dream interpreter and interpret this dream: ${dreamData}`).then((response) => {
-						handleResponse(`<blockquote expandable>${response}</blockquote>`, msg, chatId, myCache, bot, null).catch((err) => {
-							console.error(err);
-						});
-					});
-					break;
 				case "/oracle":
 					let target = text.split(" ").slice(1).join(" ");
 
+					const oracleMessage = await bot.sendMessage(msg.chat.id, `<blockquote expandable>One sec...</blockquote>`, {
+						parse_mode: "HTML",
+					});
+
 					explainContextClaude(db.collection("books"), `${target?.length > 0 ? target : "@" + msg.from.username}`)
-						.then((context) => {
-							textToSpeech(context).then(async (file) => {
+						.then(async (context) => {
+							/* textToSpeech(context).then(async (file) => {
 								await bot.sendAudio(chatId, file);
 								if (fs.existsSync(file)) {
 									fs.rmSync(file.substring(0, file.lastIndexOf("/")), { recursive: true, force: true });
 								}
+							}); */
+							const contextMessageBlocks = createMessageBlocks(context);
+							await bot.editMessageText(`<blockquote expandable>${contextMessageBlocks[0]}</blockquote>`, {
+								parse_mode: "HTML",
+								message_id: oracleMessage.message_id,
+								chat_id: msg.chat.id,
 							});
-							handleResponse(`<blockquote expandable>${context}</blockquote>`, msg, chatId, myCache, bot, null).catch((err) => {
-								console.error(err);
-							});
+							let previousMessage = oracleMessage;
+							if (contextMessageBlocks.length > 1) {
+								for (let i = 1; i < contextMessageBlocks.length; i++) {
+									previousMessage = await bot.sendMessage(chatId, `Part ${i + 1}: <blockquote expandable>${contextMessageBlocks[i]}</blockquote>`, {
+										parse_mode: "HTML",
+										reply_to_message_id: previousMessage.message_id,
+									});
+								}
+							}
 						})
 						.catch((err) => {
 							console.error(err);
@@ -974,6 +988,38 @@ Here are the commands you can use:
 							consol.error(err);
 						});
 					break;
+				case "/search":
+					const searchQuery = msg.text.split(" ").slice(1)?.join(" ");
+					if (!searchQuery || searchQuery.trim().length < 2) {
+						handleResponse(" Usage: /search <your query>", msg, chatId, myCache, bot, null).catch((err) => {
+							console.error(err);
+						});
+						break;
+					}
+					searchMessagesByEmbedding(db.collection("messages"), chatId, searchQuery)
+						.then((results) => {
+							let textOutput = results
+								.map((element) => {
+									//const similarityPercent = (element.similarity * 100).toFixed(1);
+									return `<a href="https://t.me/c/${element.chatId.toString().slice(4)}/${element.messageId}">${element.sender}: ${element.text.length > 30 ? element.text.slice(0, 30) + "..." : element.text}</a>`;
+								})
+								.join("\n");
+							if (textOutput.trim().length == 0) {
+								textOutput = "No results found.";
+							} else {
+								textOutput = "<blockquote expandable>Semantic search results:\n" + textOutput + "</blockquote>";
+							}
+							handleResponse(textOutput, msg, chatId, myCache, bot, null).catch((err) => {
+								console.error(err);
+							});
+						})
+						.catch((err) => {
+							console.error(err);
+							/* handleResponse("Error performing semantic search. Please try again.", msg, chatId, myCache, bot, null).catch((e) => {
+								console.error(e);
+							}); */
+						});
+					break;
 				case "/tldr":
 					const currentMessageURL = extractUrl(msg.text);
 					const repliedToMessageURL = extractUrl(msg.reply_to_message?.text || msg.reply_to_message?.caption);
@@ -989,29 +1035,58 @@ Here are the commands you can use:
 							}
 							const article = await extract(webpageURL);
 							const cleanedContent = article.content.replace(/<[^>]*>/g, "");
+							console.log("Extracted content:", cleanedContent);
 							const telegramHTMLPrompt = ``;
 							const prompt = "Generate a tldr for this article.";
 							let request = `${cleanedContent} ${prompt}\n ${telegramHTMLPrompt}`;
 							if (repliedToMessageURL && msgQuestion.length) {
 								request = `Give a short answer to this question ${msgQuestion}. Here's the article to repond to the question: ${cleanedContent}\n ${telegramHTMLPrompt}`;
 							}
-							const summary = await sendSimpleRequestToDeepSeek(request);
-							handleResponse(`<blockquote expandable>${summary}</blockquote>`, msg, chatId, myCache, bot, null).catch((err) => {
-								console.error(err);
+
+							const tldrMessage = await bot.sendMessage(msg.chat.id, `<blockquote expandable>One sec...</blockquote>`, {
+								parse_mode: "HTML",
 							});
+
+							const summary = await sendSimpleRequestToDeepSeek(request);
+							const summaryMessageBlocks = createMessageBlocks(summary);
+							await bot.editMessageText(`<blockquote expandable>${summaryMessageBlocks[0].replace(/<\/?p>/g, "")}</blockquote>`, {
+								parse_mode: "HTML",
+								message_id: tldrMessage.message_id,
+								chat_id: msg.chat.id,
+							});
+							let previousMessage = tldrMessage;
+							if (summaryMessageBlocks.length > 1) {
+								for (let i = 1; i < summaryMessageBlocks.length; i++) {
+									previousMessage = await bot.sendMessage(
+										chatId,
+										`Part ${i + 1}: <blockquote expandable> ${summaryMessageBlocks[i].replace(/<\/?p>/g, "")}</blockquote>`,
+										{
+											parse_mode: "HTML",
+											reply_to_message_id: previousMessage.message_id,
+										}
+									);
+								}
+							}
 						} catch (err) {
 							console.error(err);
 						}
 					});
 					break;
 				case "/archive":
-					const articleURL = extractUrl(msg?.reply_to_message?.text);
+					const articleURL = extractUrl(msg?.reply_to_message?.text) || extractUrl(msg.text);
 					if (articleURL) {
-						findDirectArchiveLink(articleURL).then((url) => {
-							handleResponse(url, msg, chatId, myCache, bot, null).catch((err) => {
+						findDirectArchiveLink(articleURL)
+							.then((url) => {
+								handleResponse(url, msg, chatId, myCache, bot, null).catch((err) => {
+									console.error(err);
+								});
+							})
+							.catch((err) => {
 								console.error(err);
+								handleResponse("Failed to get archive link.", msg, chatId, myCache, bot, null);
 							});
-						});
+					} else {
+						handleResponse("No URL found. Reply to a message with a URL or use /archive <url>", msg, chatId, myCache, bot, null);
 					}
 					break;
 				case "/tarot1":
@@ -1044,7 +1119,7 @@ Here are the commands you can use:
 				- Include references to psychoanalysis, cultural theory, or art when relevant
 				- End with some form of conclusion about the querent's situation
 				- NOT say that something is very [insert thinkers name] in the tarot cards
-				- Write a message as it's gonna be parsed by the telegram HTML parse mode, so no markdown
+				- Write a message as it's gonna be parsed by the telegram HTML parse mode (<p> </p> does not work! Do not use it!), so no markdown
 				${lastReading ? "- Reference or acknowledge the previous reading if relevant to the current cards" : ""}
 				`;
 					const tarotMessage = await bot.sendMessage(msg.chat.id, reading.join("\n") + `\n<blockquote expandable>One sec...</blockquote>`, {
@@ -1054,14 +1129,23 @@ Here are the commands you can use:
 					const interpretation = await sendSimpleRequestToDeepSeek(llmRequest);
 					await storeTarotReadingInDB(msg.from.id, msg.chat.id, reading, interpretation, userQuestion);
 					const interpretationMessageBlocks = createMessageBlocks(interpretation);
-					await bot.editMessageText(reading.join("\n") + `\n<blockquote expandable>${interpretationMessageBlocks[0]}</blockquote>`, {
+					await bot.editMessageText(reading.join("\n") + `\n<blockquote expandable>${interpretationMessageBlocks[0].replace(/<\/?p>/g, "")}</blockquote>`, {
 						parse_mode: "HTML",
 						message_id: tarotMessage.message_id,
 						chat_id: msg.chat.id,
 					});
-					if (interpretationMessageBlocks.length > 2) {
+					let previousMessage = tarotMessage;
+					console.log(interpretationMessageBlocks.length);
+					if (interpretationMessageBlocks.length > 1) {
 						for (let i = 1; i < interpretationMessageBlocks.length; i++) {
-							await bot.sendMessage(chatId, `\n<blockquote expandable> ${interpretationMessageBlocks[i]}</blockquote>`);
+							previousMessage = await bot.sendMessage(
+								chatId,
+								`Part ${i + 1}: <blockquote expandable> ${interpretationMessageBlocks[i].replace(/<\/?p>/g, "")}</blockquote>`,
+								{
+									parse_mode: "HTML",
+									reply_to_message_id: previousMessage.message_id,
+								}
+							);
 						}
 					}
 					break;
@@ -1151,7 +1235,6 @@ function extractUrl(text) {
 	}
 	var urlRegex = /(https?:\/\/[^ ]*)/;
 	const matches = text.match(urlRegex);
-	console.log(matches, "matches");
 	if (!matches) return null;
 	var url = matches[0];
 	return url ?? null;
