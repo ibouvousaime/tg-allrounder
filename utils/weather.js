@@ -13,7 +13,7 @@ async function getWeather(location, degreeType = "C") {
 		const apiData = response.data;
 		const item = {
 			location: {
-				name: `${apiData.location.name}, ${apiData.location.region}, ${apiData.location.country}`,
+				name: [apiData.location.name, apiData.location.region, apiData.location.country].filter((element) => element && element?.trim()?.length).join(", "),
 				degreetype: degreeType,
 				localTime: apiData.location.localtime,
 			},
@@ -54,20 +54,82 @@ async function getWeather(location, degreeType = "C") {
 function getFormattedWeatherData(item) {
 	const cToF = (c) => (c * 9) / 5 + 32;
 	const fToC = (f) => ((f - 32) * 5) / 9;
-	const formatTemp = (temp, unit) => {
-		if (unit === "C") return `${temp}°C (${cToF(temp).toFixed(1)}°F)`;
-		if (unit === "F") return `${temp}°F (${fToC(temp).toFixed(1)}°C)`;
-		return `${temp}°${unit}`;
+
+	const getTempEmoji = (temp, unit) => {
+		const tempC = unit === "C" ? temp : fToC(temp);
+		if (tempC >= 35) return "🔥";
+		if (tempC >= 25) return "☀️";
+		if (tempC >= 15) return "🌤️";
+		if (tempC >= 5) return "🌥️";
+		if (tempC >= -5) return "❄️";
+		return "🥶";
 	};
-	const formatUsEpaIndex = (i) => ["Unknown", "Good", "Moderate", "Unhealthy (Sensitive)", "Unhealthy", "Very Unhealthy", "Hazardous"][i] || "Unknown";
+
+	const getHumidityEmoji = (humidity) => {
+		if (humidity >= 80) return "💧";
+		if (humidity >= 60) return "💦";
+		return "🌵";
+	};
+
+	const getConditionEmoji = (condition) => {
+		const lower = condition.toLowerCase();
+		if (lower.includes("sunny") || lower.includes("clear")) return "☀️";
+		if (lower.includes("partly cloudy")) return "⛅";
+		if (lower.includes("cloudy") || lower.includes("overcast")) return "☁️";
+		if (lower.includes("rain") || lower.includes("drizzle")) return "🌧️";
+		if (lower.includes("thunder") || lower.includes("storm")) return "⛈️";
+		if (lower.includes("snow") || lower.includes("blizzard")) return "❄️";
+		if (lower.includes("fog") || lower.includes("mist")) return "🌫️";
+		if (lower.includes("sleet")) return "🌨️";
+		return "🌤️";
+	};
+
+	const getWindEmoji = (windSpeed) => {
+		const speed = parseFloat(windSpeed);
+		if (speed >= 25) return "💨";
+		if (speed >= 15) return "🍃";
+		return "🌬️";
+	};
+
+	const getRainEmoji = (chance) => {
+		if (chance >= 70) return "🌧️";
+		if (chance >= 40) return "🌦️";
+		return "☔";
+	};
+
+	const getSnowEmoji = (chance) => {
+		if (chance >= 70) return "❄️";
+		return "🌨️";
+	};
+
+	const getAirQualityEmoji = (index) => {
+		if (index === 1) return "✅";
+		if (index === 2) return "🟡";
+		if (index === 3) return "🟠";
+		if (index === 4) return "🔴";
+		if (index === 5) return "🟣";
+		if (index === 6) return "🟤";
+		return "❓";
+	};
+
+	const formatTemp = (temp, unit) => {
+		const emoji = getTempEmoji(temp, unit);
+		if (unit === "C") return `${temp}°C (${cToF(temp).toFixed(1)}°F) ${emoji} `;
+		if (unit === "F") return `${temp}°F (${fToC(temp).toFixed(1)}°C) ${emoji} `;
+		return `${temp}°${unit} ${emoji}`;
+	};
+	const formatUsEpaIndex = (i) => {
+		const labels = ["Unknown", "Good", "Moderate", "Unhealthy (Sensitive)", "Unhealthy", "Very Unhealthy", "Hazardous"];
+		return `${labels[i] || "Unknown"} ${getAirQualityEmoji(i)} `;
+	};
 
 	const lines = [
 		`<b>Location:</b> ${escapeHTML(item.location.name)}`,
 		`<b>Temp:</b> ${formatTemp(item.current.temperature, item.location.degreetype)}`,
 		`<b>Feels like:</b> ${formatTemp(item.current.feelslike, item.location.degreetype)}`,
-		`<b>Humidity:</b> ${item.current.humidity}%`,
-		`<b>Conditions:</b> ${escapeHTML(item.current.skytext)}`,
-		`<b>Wind:</b> ${escapeHTML(item.current.winddisplay)}`,
+		`<b>Humidity:</b> ${item.current.humidity}% ${getHumidityEmoji(item.current.humidity)}`,
+		`<b>Conditions:</b> ${escapeHTML(item.current.skytext)} ${getConditionEmoji(item.current.skytext)}`,
+		`<b>Wind:</b> ${escapeHTML(item.current.winddisplay)} ${getWindEmoji(item.current.winddisplay)}`,
 		`<b>Low / High:</b> ${formatTemp(item.forecast.low, item.location.degreetype)} / ${formatTemp(item.forecast.high, item.location.degreetype)}`,
 		`<b>Time:</b> Local ${item.location.localTime} | Observation ${item.current.observationtime}`,
 	];
@@ -76,14 +138,16 @@ function getFormattedWeatherData(item) {
 
 	if (item.forecast.chanceOfRain > 0) {
 		const precipUnit = item.location.degreetype === "C" ? "mm" : "in";
-		lines.push(`<b>Rain:</b> ${item.forecast.chanceOfRain}% chance, ${item.forecast.totalPrecip}${precipUnit} expected`);
+		lines.push(
+			`<b>Rain:</b> ${item.forecast.chanceOfRain}% chance, ${item.forecast.totalPrecip}${precipUnit} expected ${getRainEmoji(item.forecast.chanceOfRain)}`
+		);
 	}
 
 	if (item.forecast.chanceOfSnow > 0) {
-		lines.push(`<b>Snow:</b> ${item.forecast.chanceOfSnow}% chance`);
+		lines.push(`<b>Snow:</b> ${item.forecast.chanceOfSnow}% chance ${getSnowEmoji(item.forecast.chanceOfSnow)}`);
 	}
 
-	return `<pre>${lines.join("\n")}</pre>`;
+	return `<pre>${lines.join("\n")}</pre>`.replace("69%", "69% (nice)");
 }
 
 module.exports = { getWeather };

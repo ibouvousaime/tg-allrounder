@@ -12,12 +12,10 @@ const math = require("mathjs");
 const { getWordEtymology } = require("./utils/dictionary");
 
 const bot = new Tgfancy(process.env.TELEGRAM_BOT_TOKEN, {
-	polling: {
-		params: {
-			allowed_updates: ["message", "message_reaction"],
-		},
-	},
+	baseApiUrl: process.env.LOCAL_TELEGRAM_API_URL || "http://localhost:8081",
+	polling: true,
 });
+var forceAudio = false;
 
 const { MongoClient } = require("mongodb");
 const ansiEscapeRegex = /\x1B\[[0-?]*[ -/]*[@-~]/g;
@@ -60,13 +58,13 @@ const { extractAndConvertToCm } = require("./utils/converter");
 const { eyeWords, reactToTelegramMessage, bannedWords, nerdwords, sendPoll } = require("./utils/reactions");
 const { getRandomOracleMessageObj, getContext, explainContextClaude } = require("./utils/oracle");
 const { generateEmbedding, findSimilarMessages, countSenders, searchMessagesByEmbedding } = require("./utils/search");
-const { extractTweetId, extractTweet } = require("./utils/bird");
+const { extractTweetId, extractTweet, generateTweetScreenshot } = require("./utils/bird");
 const { getAndSendRandomQuestion } = require("./utils/trivia");
 const { sendRandomQuizz } = require("./utils/quizz");
 const { getPollResults } = require("./utils/telegram_polls");
 const { getReading } = require("./utils/tarot");
 const { MaxPool3DGrad } = require("@tensorflow/tfjs");
-const { extractAndEchoSocialLink, getSpotifyMusicLink, downloadImageAsBuffer, getAlbumFromSong, downloadVideoFromUrl } = require("./utils/downloader");
+const { extractAndEchoSocialLink, downloadImageAsBuffer, getAlbumFromSong, downloadVideoFromUrl } = require("./utils/downloader");
 const { findDirectArchiveLink } = require("./utils/web");
 const { textToSpeech, createConversationAudio } = require("./utils/tts");
 const { makeid, createMessageBlocks } = require("./utils/util");
@@ -76,9 +74,10 @@ const myCache = new NodeCache();
 const axios = require("axios");
 const { getWeather } = require("./utils/weather");
 const { getUserMessagesAndAnalyse } = require("./utils/political");
+const { getLocalNews } = require("./utils/news");
 
 axios
-	.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/setMyCommands`, {
+	.post(`${process.env.LOCAL_TELEGRAM_API_URL || "http://localhost:8081"}/bot${process.env.TELEGRAM_BOT_TOKEN}/setMyCommands`, {
 		commands: [
 			{ command: "help", description: "Display help message with all commands" },
 			{ command: "8ball", description: "Get a Magic 8-Ball response" },
@@ -92,13 +91,8 @@ axios
 			{ command: "ocr", description: "Extract text from image - reply to image" },
 			{ command: "wordcloud", description: "Generate word cloud from recent messages" },
 			{ command: "createsticker", description: "Create sticker from image with emojis" },
-			{ command: "dream", description: "Get dream interpretation" },
 			{ command: "oracle", description: "Get oracle reading with audio" },
-			{ command: "tldr", description: "Summarize webpage or article" },
 			{ command: "archive", description: "Get archive.org link for URL" },
-			{ command: "tarot1", description: "Single card tarot reading" },
-			{ command: "tarot3", description: "Three card tarot reading" },
-			{ command: "tarot10", description: "Ten card tarot reading" },
 			{ command: "musicstats", description: "View music statistics" },
 			{ command: "findalbum", description: "Find album for audio track - reply to audio" },
 			{ command: "regex", description: "Search messages by regex pattern" },
@@ -106,8 +100,10 @@ axios
 			{ command: "count", description: "Count message occurrences" },
 			{ command: "glossary", description: "Search glossary" },
 			{ command: "addtoglossary", description: "Add word to glossary with definition" },
+			{ command: "downloadaudio", description: "Reply to a message with a URL to download audio or do /downloadaudio <url>" },
 			{ command: "download", description: "Reply to a message with a URL to download a video or do /download <url>" },
 			{ command: "cc", description: "Convert currency" },
+			{ command: "summary", description: "Summarize last N messages (default: 100)" },
 		],
 	})
 	.then(() => {
@@ -153,10 +149,10 @@ function getAdminsIds(chatId) {
 	});
 }
 
-bot.on("poll", async (msg) => {
+/* bot.on("poll", async (msg) => {
 	console.log(msg);
 });
-
+ */
 function isUserAllowedToDM(userId) {
 	const allowedUsers = process.env.ALLOWED_TO_DM_BOT.split(" ").map((userid) => Number(userid));
 	return allowedUsers.includes(userId);
@@ -176,7 +172,9 @@ async function handleSocialMediaLinks(text, chatId, messageId, msg) {
 					if (isVideo) {
 						bot.sendVideo(chatId, data, { reply_to_message_id: messageId });
 					} else {
-						const sentAudio = await bot.sendAudio(chatId, data, { reply_to_message_id: messageId });
+						const sentAudio = await bot.sendAudio(chatId, data, {
+							reply_to_message_id: messageId,
+						});
 						storeMusicInDB(sentAudio.audio, sentAudio, msg.from);
 					}
 				});
@@ -190,68 +188,70 @@ async function handleTweetPreview(msg, text, chatId) {
 	if (!tweetId || text.includes("no preview")) {
 		return;
 	}
-
 	try {
 		const tweetData = await extractTweet(text);
 		if (!tweetData) return;
-
-		let tweetText = `${tweetData?.fullText} \nTweet by ${tweetData?.tweetBy?.fullName || ""} (@${tweetData?.tweetBy?.userName}) on ${tweetData?.createdAt || ""}`;
-
-		tweetData.media = tweetData.media || [];
-		tweetData.media = await Promise.all(
-			tweetData.media.map((media) => {
-				return new Promise(async (resolve, reject) => {
-					try {
-						media.url = await downloadImageAsBuffer(media.url);
-						resolve(media);
-					} catch (err) {
-						reject(err);
-					}
-				});
-			})
-		);
-
-		const media = tweetData.media;
-		const mediaCount = media?.length || 0;
-
 		const messageOptions = {
 			parse_mode: "HTML",
 			disable_web_page_preview: true,
 			has_spoiler: text.includes("spoiler"),
 		};
-		const tweetTextParts = createMessageBlocks(tweetText, 750).map((text) => `<blockquote expandable>${text}</blockquote>`);
-		tweetText = tweetTextParts[0];
-		if (mediaCount === 0) {
-			await bot.sendMessage(chatId, tweetText, messageOptions);
-		} else if (mediaCount === 1) {
-			const singleMedia = media[0];
-			const optionsWithCaption = { ...messageOptions, caption: tweetText };
-
-			if (singleMedia.type === "VIDEO") {
-				await bot.sendVideo(chatId, singleMedia.url, optionsWithCaption);
-			} else {
-				await bot.sendPhoto(chatId, singleMedia.url, optionsWithCaption);
-			}
-		} else if (mediaCount > 1 && mediaCount <= 10) {
-			const mediaGroup = media.map((item, index) => ({
-				type: item.type.toLowerCase(),
-				media: item.url,
-				...(index === 0 && { caption: tweetText, parse_mode: "HTML" }),
-			}));
-			await bot.sendMediaGroup(chatId, mediaGroup);
+		const hasVideos = tweetData?.media?.some((media) => media.type == "VIDEO" || media.type == "GIF");
+		if (!hasVideos && !text.includes("old style")) {
+			await bot.sendPhoto(chatId, await generateTweetScreenshot(tweetData), messageOptions);
 		} else {
-			for (const item of media) {
-				if (item.type === "VIDEO") {
-					await bot.sendVideo(chatId, item.url);
-				} else if (item.type === "PHOTO") {
-					await bot.sendPhoto(chatId, item.url);
+			let tweetText = `${tweetData?.fullText} \nTweet by ${tweetData?.tweetBy?.fullName || ""} (@${tweetData?.tweetBy?.userName}) on ${tweetData?.createdAt || ""}`;
+			tweetData.media = tweetData.media || [];
+			tweetData.media = await Promise.all(
+				tweetData.media.map((media) => {
+					return new Promise(async (resolve, reject) => {
+						try {
+							media.url = await downloadImageAsBuffer(media.url);
+							resolve(media);
+						} catch (err) {
+							reject(err);
+						}
+					});
+				})
+			);
+
+			const media = tweetData.media;
+			const mediaCount = media?.length || 0;
+
+			const tweetTextParts = createMessageBlocks(tweetText, 750).map((text) => `<blockquote expandable>${text}</blockquote>`);
+			tweetText = tweetTextParts[0];
+			if (mediaCount === 0) {
+				await bot.sendMessage(chatId, tweetText, messageOptions);
+			} else if (mediaCount === 1) {
+				const singleMedia = media[0];
+				const optionsWithCaption = { ...messageOptions, caption: tweetText };
+
+				if (singleMedia.type === "VIDEO") {
+					await bot.sendVideo(chatId, singleMedia.url, optionsWithCaption);
+				} else {
+					await bot.sendPhoto(chatId, singleMedia.url, optionsWithCaption);
 				}
+			} else if (mediaCount > 1 && mediaCount <= 10) {
+				const mediaGroup = media.map((item, index) => ({
+					type: item.type.toLowerCase(),
+					media: item.url,
+					...(index === 0 && { caption: tweetText, parse_mode: "HTML" }),
+				}));
+				await bot.sendMediaGroup(chatId, mediaGroup);
+			} else {
+				for (const item of media) {
+					if (item.type === "VIDEO") {
+						await bot.sendVideo(chatId, item.url);
+					} else if (item.type === "PHOTO") {
+						await bot.sendPhoto(chatId, item.url);
+					}
+				}
+				await bot.sendMessage(chatId, tweetText, messageOptions);
 			}
-			await bot.sendMessage(chatId, tweetText, messageOptions);
-		}
-		if (tweetTextParts.length > 1) {
-			for (const i = 1; i < tweetTextParts.length; i++) {
-				await bot.sendMessage(chatId, tweetTextParts[i], messageOptions);
+			if (tweetTextParts.length > 1) {
+				for (let i = 1; i < tweetTextParts.length; i++) {
+					await bot.sendMessage(chatId, tweetTextParts[i], messageOptions);
+				}
 			}
 		}
 	} catch (error) {
@@ -296,7 +296,7 @@ async function storeMusicInDB(audio, msg, actualSender) {
 		const musicData = {
 			chatId: msg.chat.id,
 			messageId: msg.messageId,
-			file_name: audio.file_name,
+			file_name: audio?.file_name,
 			title: audio.title,
 			performer: audio.performer,
 			date: new Date(msg.date * 1000),
@@ -343,7 +343,13 @@ bot.on("audio", async (msg) => {
 bot.on("text", async (msg) => {
 	const chatId = msg.chat.id;
 	const text = msg.text || msg.caption;
-
+	/* if (msg.text.startsWith("/"))
+		if (msg.from.first_name.trim().startsWith("sam")) {
+			const msgWarn = await bot.sendMessage(msg.chat.id, "Procastinators are banned from using this bot.");
+			setTimeout(() => {
+				bot.deleteMessage(msg.chat.id, msgWarn.message_id);
+			}, 2000);
+		} */
 	if (msg.chat.type === "private" && !isUserAllowedToDM(msg.from.id)) {
 		return;
 	}
@@ -394,7 +400,6 @@ Here are the commands you can use:
 
 <b>Image & Media:</b>
 /unsplash - Generate quote image (reply to message)
-/ocr - Extract text from image (reply to image)
 /wordcloud - Generate word cloud from recent messages
 /removebg - Remove background or delete sticker (also /rmbg, /deletesticker)
 /createsticker [emojis] - Create sticker from image (also /addsticker)
@@ -450,14 +455,6 @@ Here are the commands you can use:
 					oneWeekAgo.setDate(currentDate.getDate() - 2);
 
 					collection
-						.deleteMany({ date: { $lt: oneWeekAgo } })
-						.then((output) => {
-							console.log(output);
-						})
-						.catch((err) => {
-							console.error(err);
-						});
-					collection
 						.find({ chatId })
 						.sort({ date: -1 })
 						.limit(100)
@@ -474,10 +471,11 @@ Here are the commands you can use:
 						});
 
 					break;
-
-				case "/download": {
+				case "/downloadaudio":
+					forceAudio = true;
+				case "/download":
 					const downloadLinkStr = [msg.reply_to_message?.text || "", msg.text].join(" ");
-					downloadVideoFromUrl(downloadLinkStr, (output) => {
+					downloadVideoFromUrl(downloadLinkStr, !!forceAudio, (output) => {
 						const messageId = msg.messageId;
 						if (Array.isArray(output)) {
 							output.forEach((media) => {
@@ -488,9 +486,18 @@ Here are the commands you can use:
 									}
 									const isVideo = videoExtensions.some((videoext) => media.endsWith(videoext));
 									if (isVideo) {
-										bot.sendVideo(chatId, data, { reply_to_message_id: messageId });
+										bot.sendVideo(
+											chatId,
+											data,
+											{
+												reply_to_message_id: messageId,
+											},
+											{ filename: new Date() + "video.mp4", contentType: "video/mp4" }
+										);
 									} else {
-										const sentAudio = await bot.sendAudio(chatId, data, { reply_to_message_id: messageId });
+										const sentAudio = await bot.sendAudio(chatId, data, {
+											reply_to_message_id: messageId,
+										});
 										storeMusicInDB(sentAudio.audio, sentAudio, msg.from);
 									}
 								});
@@ -498,7 +505,7 @@ Here are the commands you can use:
 						}
 					});
 					break;
-				}
+
 				case "/calc":
 					const expression = msg.text.split(" ").slice(1).join(" ");
 					let result = math.evaluate(expression);
@@ -547,19 +554,39 @@ Here are the commands you can use:
 					});
 					break;
 				case "/ocr":
+					handleResponse("I disabled it since no one used it but if you want me to enable it, let me know.", msg, chatId, myCache, bot, null).catch((err) => {
+						console.error(err);
+					});
+				/*
 					if (msg.reply_to_message && (msg.reply_to_message.photo || msg.reply_to_message.sticker)) {
+						const userQuestion = msg.text.split(" ").slice(1).join(" ");
 						const photoArray = msg.reply_to_message.photo;
 						const highestQualityPhoto = photoArray ? photoArray[photoArray.length - 1] : msg.reply_to_message.sticker;
 						bot.getFile(highestQualityPhoto.file_id).then(async (file) => {
-							const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
+							const fileUrl = `${process.env.LOCAL_TELEGRAM_API_URL || "http://localhost:8081"}/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
 							const response = await fetch(fileUrl);
-							const imageData = await response.arrayBuffer();
-							const responseLLM = await sendRequestWithImageToClaude(
-								`Explain what's on this image like an OCR engine would but make it easy to parse what's on the image. Keep it short and on what seems important.`,
-								imageData,
-								guessMediaType(fileUrl)
+							const imageBuffer = await response.arrayBuffer();
+							const base64Image = Buffer.from(imageBuffer).toString("base64");
+
+							const basePrompt =
+								"Explain what's on this image like an OCR engine would but make it easy to parse what's on the image. Keep it short and on what seems important.";
+							const finalPrompt =
+								userQuestion.trim().length > 0 ? `${basePrompt}\n\nAdditionally, answer this question about the image: ${userQuestion}` : basePrompt;
+
+							const ollamaResponse = await axios.post(
+								"http://localhost:11434/api/generate",
+								{
+									model: "gemma2:2b",
+									prompt: finalPrompt,
+									images: [base64Image],
+									stream: false,
+								},
+								{
+									timeout: 600000,
+								}
 							);
-							const LLMTextOutput = responseLLM.content[0].text;
+
+							const LLMTextOutput = ollamaResponse.data.response;
 							handleResponse(
 								`<blockquote expandable> ${LLMTextOutput.replace(/&/g, "&amp;")
 									.replace(/</g, "&lt;")
@@ -576,7 +603,7 @@ Here are the commands you can use:
 							});
 						});
 					}
-					break;
+					break; */
 				case "/unsplash":
 					let replyToMessage = msg.reply_to_message;
 					if (msg.reply_to_message?.forward_from) {
@@ -616,7 +643,7 @@ Here are the commands you can use:
 							console.error(err);
 						}
 					};
-					deleteMsg();
+					if (msg?.from.id == process.env.STICKER_OWNER) deleteMsg();
 
 					break;
 				case "/weatherf":
@@ -677,7 +704,7 @@ Here are the commands you can use:
 					break;
 				case "/invite":
 					const invite = text.split(" ").slice(1).join(" ");
-					sendPoll(db, msg.chat.id, `Invite ${invite} to the chat?`, [{ text: "Yes" }, { text: "No" }], true);
+					sendPoll(db, msg.chat.id, `Invite ${invite} to the chat?`, [{ text: "Yes" }, { text: "No" }], false);
 					break;
 				case "/voteban":
 					const victim = text.split(" ").slice(1).join(" ");
@@ -720,7 +747,6 @@ Here are the commands you can use:
 					break;
 				case "/when":
 					let reply = `Date: ${new Date(msg.reply_to_message.date * 1000).toUTCString()}`;
-					console.log(msg);
 					if (msg.reply_to_message.forward_date) {
 						reply += `\nOriginal date: ${new Date(msg.reply_to_message.forward_date * 1000).toUTCString()}`;
 					}
@@ -731,13 +757,14 @@ Here are the commands you can use:
 				case "/removebg":
 				case "/rmbg":
 				case "/deletesticker":
-					if (!(await getAdminsIds(chatId)).includes(msg.from.id) && msg.chat.type != "private") {
+					if (!((await getAdminsIds(chatId)).includes(msg.from.id) || msg.from.id == process.env.STICKER_OWNER) && msg.chat.type != "private") {
 						await bot.sendMessage(msg.chat.id, "no, ur not my dad");
 						return;
 					}
 
 					if (msg.reply_to_message?.sticker) {
-						if (!msg.reply_to_message?.sticker?.set_name.includes(chatId) && msg.chat.type != "private") {
+						console.log(msg.reply_to_message?.sticker, msg.chat.id.toString().slice(4));
+						if (!msg.reply_to_message?.sticker?.set_name.includes(chatId.toString().slice(4)) && msg.chat.type != "private") {
 							await bot.sendMessage(msg.chat.id, "no, wtf");
 							return;
 						}
@@ -748,6 +775,7 @@ Here are the commands you can use:
 					break;
 				case "/createsticker":
 				case "/addsticker":
+					console.log(msg.reply_to_message);
 					if (msg.reply_to_message && (msg.reply_to_message.photo || msg.reply_to_message.sticker || msg.reply_to_message.document)) {
 						const emojis = msg.text.split(" ").slice(1).join(" ").replace(/\s+/g, "");
 						if (!isEmojiString(emojis) && emojis.trim().length == 0) {
@@ -758,10 +786,10 @@ Here are the commands you can use:
 						}
 						const photoArray = msg.reply_to_message.photo;
 						const highestQualityPhoto = photoArray ? photoArray[photoArray.length - 1] : msg.reply_to_message.sticker || msg.reply_to_message.document;
+						console.log(highestQualityPhoto);
 						bot.getFile(highestQualityPhoto.file_id).then(async (file) => {
-							const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
-							const imageResponse = await fetch(fileUrl);
-							const arrayBuffer = await imageResponse.arrayBuffer();
+							const arrayBuffer = fs.readFileSync(file.file_path);
+							fs.writeFileSync("tempfile", Buffer.from(arrayBuffer));
 							const imageBuffer = Buffer.from(arrayBuffer);
 							const resizedImage = await resizeImageBuffer(imageBuffer);
 							const stickerPackName = `hummus${chatId.toString().slice(4)}_by_${process.env.BOT_USERNAME}`;
@@ -794,42 +822,7 @@ Here are the commands you can use:
 						});
 					}
 					break;
-				case "/oracle":
-					let target = text.split(" ").slice(1).join(" ");
 
-					const oracleMessage = await bot.sendMessage(msg.chat.id, `<blockquote expandable>One sec...</blockquote>`, {
-						parse_mode: "HTML",
-					});
-
-					explainContextClaude(db.collection("books"), `${target?.length > 0 ? target : "@" + msg.from.username}`)
-						.then(async (context) => {
-							/* textToSpeech(context).then(async (file) => {
-								await bot.sendAudio(chatId, file);
-								if (fs.existsSync(file)) {
-									fs.rmSync(file.substring(0, file.lastIndexOf("/")), { recursive: true, force: true });
-								}
-							}); */
-							const contextMessageBlocks = createMessageBlocks(context);
-							await bot.editMessageText(`<blockquote expandable>${contextMessageBlocks[0]}</blockquote>`, {
-								parse_mode: "HTML",
-								message_id: oracleMessage.message_id,
-								chat_id: msg.chat.id,
-							});
-							let previousMessage = oracleMessage;
-							if (contextMessageBlocks.length > 1) {
-								for (let i = 1; i < contextMessageBlocks.length; i++) {
-									previousMessage = await bot.sendMessage(chatId, `Part ${i + 1}: <blockquote expandable>${contextMessageBlocks[i]}</blockquote>`, {
-										parse_mode: "HTML",
-										reply_to_message_id: previousMessage.message_id,
-									});
-								}
-							}
-						})
-						.catch((err) => {
-							console.error(err);
-						});
-
-					break;
 				case "/addtoglossary":
 					const glossaryCollection = db.collection("glossary");
 					const args = msg.text.split(" ").slice(1).join(" ").split(":");
@@ -1021,7 +1014,11 @@ Here are the commands you can use:
 						});
 					break;
 				case "/tldr":
-					const currentMessageURL = extractUrl(msg.text);
+					handleResponse("Just read the article smh.", msg, chatId, myCache, bot, "i").catch((err) => {
+						console.error(err);
+					});
+					break;
+				/* const currentMessageURL = extractUrl(msg.text);
 					const repliedToMessageURL = extractUrl(msg.reply_to_message?.text || msg.reply_to_message?.caption);
 					const msgQuestion = msg.text.split(" ").slice(1).join(" ").trim();
 					let webpageURL = currentMessageURL || repliedToMessageURL;
@@ -1071,7 +1068,7 @@ Here are the commands you can use:
 							console.error(err);
 						}
 					});
-					break;
+					break; */
 				case "/archive":
 					const articleURL = extractUrl(msg?.reply_to_message?.text) || extractUrl(msg.text);
 					if (articleURL) {
@@ -1093,61 +1090,12 @@ Here are the commands you can use:
 				case "/tarot3":
 				case "/tarot10":
 					const cardsToDraw = Number(msg.text.split("tarot")[1]) || 3;
-					const userQuestion = msg.text.split(" ").splice(1).join(" ");
-					const { slideshowPath, reading, imagePaths } = await getReading(cardsToDraw);
-					const fileOptions = {
-						filename: "video.mp4",
-						contentType: "video/mp4",
-					};
+					const { reading, imagePaths } = await getReading(cardsToDraw);
 
-					const lastReading = await getLastTarotReading(msg.from.id, msg.chat.id);
-					const lastReadingContext = lastReading
-						? `\n\nFor context, their last reading was on ${lastReading.date.toDateString()} with the cards: ${lastReading.cards.join(", ")}. ${lastReading.question ? `They asked: "${lastReading.question}".` : ""} The interpretation was: "${lastReading.interpretation}"`
-						: "";
-
-					const llmRequest = `
-				Generate a tarot reading for ${[msg.from.first_name, msg.from.last_name].join(" ").trim()} (@${msg.from.username}) based on these cards: ${reading.join(",")}.
-				${userQuestion.trim().length > 0 ? `The reading should address this specific question: "${userQuestion}"` : ""}${lastReadingContext}
-
-				Format the response as a conversation between Dasha Nekrasova and Anna Khachiyan from the Red Scare podcast. Include their typical banter, cultural references, and sardonic tone. They should directly address ${msg.from.username ? `@${msg.from.username}` : "the querent"} during the reading.
-
-				If there's a natural opportunity for a clever wordplay or joke related to the querent's name that fits the reading's context, include it, but don't force it.
-
-				The reading should:
-				- Interpret each card's meaning in relation to the others
-				- Maintain the nihilistic yet insightful tone of the podcast
-				- Include references to psychoanalysis, cultural theory, or art when relevant
-				- End with some form of conclusion about the querent's situation
-				- NOT say that something is very [insert thinkers name] in the tarot cards
-				- Write a message as it's gonna be parsed by the telegram HTML parse mode (<p> </p> does not work! Do not use it!), so no markdown
-				${lastReading ? "- Reference or acknowledge the previous reading if relevant to the current cards" : ""}
-				`;
-					const tarotMessage = await bot.sendMessage(msg.chat.id, reading.join("\n") + `\n<blockquote expandable>One sec...</blockquote>`, {
+					await bot.sendMessage(msg.chat.id, reading.join("\n"), {
 						parse_mode: "HTML",
 					});
 
-					const interpretation = await sendSimpleRequestToDeepSeek(llmRequest);
-					await storeTarotReadingInDB(msg.from.id, msg.chat.id, reading, interpretation, userQuestion);
-					const interpretationMessageBlocks = createMessageBlocks(interpretation);
-					await bot.editMessageText(reading.join("\n") + `\n<blockquote expandable>${interpretationMessageBlocks[0].replace(/<\/?p>/g, "")}</blockquote>`, {
-						parse_mode: "HTML",
-						message_id: tarotMessage.message_id,
-						chat_id: msg.chat.id,
-					});
-					let previousMessage = tarotMessage;
-					console.log(interpretationMessageBlocks.length);
-					if (interpretationMessageBlocks.length > 1) {
-						for (let i = 1; i < interpretationMessageBlocks.length; i++) {
-							previousMessage = await bot.sendMessage(
-								chatId,
-								`Part ${i + 1}: <blockquote expandable> ${interpretationMessageBlocks[i].replace(/<\/?p>/g, "")}</blockquote>`,
-								{
-									parse_mode: "HTML",
-									reply_to_message_id: previousMessage.message_id,
-								}
-							);
-						}
-					}
 					break;
 				case "/musicstats":
 					const stats = await getMusicStats(musicCollection, msg.chat.id);
@@ -1162,6 +1110,115 @@ Here are the commands you can use:
 						const output = await getAlbumFromSong(fullMusicName);
 						await bot.sendMessage(msg.chat.id, `<a href="${output.albumLink}">${output.name}</a>`, { parse_mode: "HTML", reply_to_message_id: msg.messageId });
 					}
+					break;
+				/* case "/trans":
+					{
+						let textMsg = text.split(" ").slice(1).join(" ");
+						const translateString = (textMsg.trim().length ? textMsg : msg.quote?.text || msg.reply_to_message?.text || msg.reply_to_message?.caption) || "";
+						const ollamaResponse = await axios.post(
+							"http://localhost:11434/api/generate",
+							{
+								model: "gemma2:2b",
+								prompt: `translate this sentence to English: ${translateString}. Only reply with the translation.`,
+								stream: false,
+							},
+							{
+								timeout: 600000,
+							}
+						);
+
+						const summary = ollamaResponse.data.response;
+						const summaryBlocks = createMessageBlocks(summary);
+
+						let previousMessage = await bot.sendMessage(chatId, `<blockquote expandable>${summaryBlocks[0]}</blockquote>`, {
+							parse_mode: "HTML",
+						});
+						if (summaryBlocks.length > 1) {
+							for (let i = 1; i < summaryBlocks.length; i++) {
+								previousMessage = await bot.sendMessage(chatId, `Part ${i + 1}: <blockquote expandable>${summaryBlocks[i]}</blockquote>`, {
+									parse_mode: "HTML",
+									reply_to_message_id: previousMessage.message_id,
+								});
+							}
+						}
+					}
+					break;
+ */
+				case "/summary":
+					handleResponse("I disabled it because it was bad anyway.", msg, chatId, myCache, bot, null).catch((err) => {
+						console.error(err);
+					});
+					break;
+				/* 
+					let limit = parseInt(msg.text.split(" ")[1]) || 100;
+					limit = limit > 100 ? 100 : limit;
+					limit = limit < 50 ? 50 : limit;
+					const summaryLoadingMessage = await bot.sendMessage(
+						msg.chat.id,
+						`<blockquote expandable>Fetching last ${limit} messages and generating summary...</blockquote>`,
+						{
+							parse_mode: "HTML",
+						}
+					);
+
+					try {
+						const messages = await collection.find({ chatId }).sort({ date: -1 }).limit(limit).toArray();
+
+						if (messages.length === 0) {
+							await bot.editMessageText(`<blockquote expandable>No messages found in the database.</blockquote>`, {
+								parse_mode: "HTML",
+								message_id: summaryLoadingMessage.message_id,
+								chat_id: msg.chat.id,
+							});
+							break;
+						}
+
+						const formattedMessages = messages
+							.reverse()
+							.map((m) => `${m.sender}: ${m.text}`)
+							.join("\n");
+
+						const ollamaResponse = await axios.post(
+							"http://localhost:11434/api/generate",
+							{
+								model: "gemma2:2b",
+								prompt: `Please provide a concise summary of the following chat conversation. Focus on the main topics, key points, and any important decisions or conclusions:\n\n${formattedMessages}`,
+								stream: false,
+							},
+							{
+								timeout: 600000,
+							}
+						);
+
+						const summary = ollamaResponse.data.response;
+						const summaryBlocks = createMessageBlocks(summary);
+
+						await bot.editMessageText(`<blockquote expandable><b>Summary of last ${messages.length} messages:</b>\n\n${summaryBlocks[0]}</blockquote>`, {
+							parse_mode: "HTML",
+							message_id: summaryLoadingMessage.message_id,
+							chat_id: msg.chat.id,
+						});
+
+						let previousMessage = summaryLoadingMessage;
+						if (summaryBlocks.length > 1) {
+							for (let i = 1; i < summaryBlocks.length; i++) {
+								previousMessage = await bot.sendMessage(chatId, `Part ${i + 1}: <blockquote expandable>${summaryBlocks[i]}</blockquote>`, {
+									parse_mode: "HTML",
+									reply_to_message_id: previousMessage.message_id,
+								});
+							}
+						}
+					} catch (err) {
+						console.error("Error generating summary:", err);
+						await bot.deleteMessage(msg.chat.id, summaryLoadingMessage.message_id);
+					}
+					break; */
+				case "/news":
+					let city = text.split(" ").slice(1).join(" ");
+					const news = await getLocalNews(city);
+					handleResponse(news, msg, chatId, myCache, bot, null, true).catch((e) => {
+						console.error(e);
+					});
 					break;
 				/* case "/voiceTarot1":
 			case "/voiceTarot3":
@@ -1239,7 +1296,7 @@ function extractUrl(text) {
 	var url = matches[0];
 	return url ?? null;
 }
-function handleResponse(text, msg, chatId, myCache, bot, containerFormat) {
+function handleResponse(text, msg, chatId, myCache, bot, containerFormat, disablePreview = false) {
 	return new Promise(async (resolve, reject) => {
 		const previousResponse = myCache.get(`message-${msg.message_id}`);
 		if (previousResponse) {
@@ -1248,6 +1305,7 @@ function handleResponse(text, msg, chatId, myCache, bot, containerFormat) {
 					parse_mode: "HTML",
 					message_id: previousResponse,
 					chat_id: chatId,
+					disable_web_page_preview: disablePreview,
 				})
 				.then(() => resolve(msg))
 				.catch(async (err) => {
@@ -1258,7 +1316,7 @@ function handleResponse(text, msg, chatId, myCache, bot, containerFormat) {
 					});
 				});
 		} else {
-			sendNewMessage(bot, chatId, text, msg.message_id, myCache, containerFormat)
+			sendNewMessage(bot, chatId, text, msg.message_id, myCache, containerFormat, disablePreview)
 				.then((response) => {
 					resolve(response);
 				})
@@ -1270,11 +1328,12 @@ function handleResponse(text, msg, chatId, myCache, bot, containerFormat) {
 	});
 }
 
-async function sendNewMessage(bot, chatId, data, messageId, myCache, containerFormat) {
+async function sendNewMessage(bot, chatId, data, messageId, myCache, containerFormat, disablePreview = false) {
 	try {
 		const responseMessage = await bot.sendMessage(chatId, containerFormat ? `<${containerFormat}>${data}</${containerFormat}>` : data, {
 			parse_mode: "HTML",
 			reply_to_message_id: messageId,
+			disable_web_page_preview: disablePreview,
 		});
 		myCache.set(`message-${messageId}`, responseMessage.message_id, 10000);
 		return responseMessage;

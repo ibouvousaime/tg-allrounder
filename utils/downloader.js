@@ -1,4 +1,3 @@
-const path = require("path");
 const os = require("os");
 const { exec } = require("child_process");
 const fs = require("fs");
@@ -7,12 +6,41 @@ const execPromise = promisify(exec);
 const SpottyDL = require("spottydl");
 const axios = require("axios");
 const { makeid } = require("./util");
+const { spawn } = require("node:child_process");
+const path = require("path");
+const crypto = require("crypto");
 
 async function loadMusicModule() {
 	const musicModule = await import("ytmusic-api");
 
 	const YTMusic = musicModule.default;
 	return YTMusic;
+}
+
+function spawnPromise(command, args) {
+	return new Promise((resolve, reject) => {
+		const child = spawn(command, args, {
+			shell: true,
+		});
+
+		child.stdout.on("data", (data) => {
+			process.stdout.write(data);
+		});
+
+		child.stderr.on("data", (data) => {
+			process.stderr.write(data);
+		});
+
+		child.on("error", reject);
+
+		child.on("close", (code) => {
+			if (code === 0) {
+				resolve();
+			} else {
+				reject(new Error(`yt-dlp exited with code ${code}`));
+			}
+		});
+	});
 }
 
 async function extractAndEchoSocialLink(text, callback) {
@@ -23,16 +51,18 @@ async function extractAndEchoSocialLink(text, callback) {
 		text = spotifyConvertedLink;
 		audioMode = true;
 		filename = name;
+		console.log("spotify detected", spotifyConvertedLink);
 	}
+	const socialLinkRegex =
+		/(https?:\/\/(www\.)?((tiktok\.com|vm\.tiktok\.com|music\.youtube\.com|soundcloud\.com|on\.soundcloud\.com)\/|youtube\.com\/shorts\/)[^\s]+)/;
 
-	const socialLinkRegex = /(https?:\/\/(www\.)?((tiktok\.com|vm\.tiktok\.com|instagram\.com|music\.youtube\.com)\/|youtube\.com\/shorts\/)[^\s]+)/;
 	const match = text.match(socialLinkRegex);
 	if (!match || !match[0]) {
 		return;
 	}
 
 	const link = match[0];
-
+	if (link.includes("soundcloud")) audioMode = true;
 	const destinationFolder = path.join(os.tmpdir(), makeid(20));
 	fs.mkdirSync(destinationFolder);
 	const ytDlpCommand = [
@@ -66,13 +96,15 @@ async function extractAndEchoSocialLink(text, callback) {
 		console.log(galleryDlCommand);
 		console.error(`All download attempts failed: ${error}`);
 	} finally {
-		if (fs.existsSync(destinationFolder)) {
-			fs.rmSync(destinationFolder, { recursive: true, force: true });
-		}
+		setTimeout(() => {
+			if (fs.existsSync(destinationFolder)) {
+				fs.rmSync(destinationFolder, { recursive: true, force: true });
+			}
+		}, 5000);
 	}
 }
 
-async function downloadVideoFromUrl(text, callback) {
+async function downloadVideoFromUrl(text, forceAudio, callback) {
 	const urlRegex = /(https?:\/\/[^\s]+)/;
 	const match = text.match(urlRegex);
 
@@ -82,24 +114,30 @@ async function downloadVideoFromUrl(text, callback) {
 	}
 
 	const link = match[0];
-	console.log("found", link);
 	const destinationFolder = path.join(os.tmpdir(), makeid(20));
 	fs.mkdirSync(destinationFolder);
 
-	const ytDlpCommand = [
-		`${os.homedir()}/.local/bin/yt-dlp`,
-		`--embed-metadata`,
+	let isAudioOnly = false;
+	if (forceAudio) {
+		isAudioOnly = true;
+	}
+	const ytdlpPath = `${os.homedir()}/.local/bin/yt-dlp`;
+	const ytDlpCommandArgs = [
+		"--embed-metadata",
 		`"${link}"`,
 		`-P "${destinationFolder}"`,
-		'-f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"',
-		`--cookies ${os.homedir()}/cookies.txt`,
-	].join(" ");
 
+		isAudioOnly ? '-x --audio-format mp3 -f "bestaudio/best"' : '-f "bv*[vcodec^=avc1][ext=mp4]+ba*[acodec^=mp4a]/b[ext=mp4]"',
+
+		"--merge-output-format mp4",
+		'--postprocessor-args "ffmpeg:-movflags +faststart"',
+		`--cookies ${os.homedir()}/cookies.txt`,
+	];
+	console.log("downloading with", ytDlpCommandArgs);
 	try {
-		await execPromise(ytDlpCommand);
+		await spawnPromise(ytdlpPath, ytDlpCommandArgs);
 
 		const files = getAllFilesSync(destinationFolder);
-
 		if (files && files.length > 0) {
 			await callback(files);
 		} else {
@@ -108,9 +146,11 @@ async function downloadVideoFromUrl(text, callback) {
 	} catch (error) {
 		console.error(`download error: "${link}":`, error);
 	} finally {
-		if (fs.existsSync(destinationFolder)) {
-			fs.rmSync(destinationFolder, { recursive: true, force: true });
-		}
+		setTimeout(() => {
+			if (fs.existsSync(destinationFolder)) {
+				fs.rmSync(destinationFolder, { recursive: true, force: true });
+			}
+		}, 10000);
 	}
 }
 
@@ -191,4 +231,10 @@ async function downloadImageAsBuffer(url) {
 	}
 }
 
-module.exports = { extractAndEchoSocialLink, getSpotifyMusicLink, downloadImageAsBuffer, getAlbumFromSong, downloadVideoFromUrl };
+module.exports = {
+	extractAndEchoSocialLink,
+	getSpotifyMusicLink,
+	downloadImageAsBuffer,
+	getAlbumFromSong,
+	downloadVideoFromUrl,
+};
