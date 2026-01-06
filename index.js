@@ -154,10 +154,6 @@ function getAdminsIds(chatId) {
 	});
 }
 
-/* bot.on("poll", async (msg) => {
-	console.log(msg);
-});
- */
 function isUserAllowedToDM(userId) {
 	const allowedUsers = process.env.ALLOWED_TO_DM_BOT.split(" ").map((userid) => Number(userid));
 	return allowedUsers.includes(userId);
@@ -348,13 +344,7 @@ bot.on("audio", async (msg) => {
 bot.on("text", async (msg) => {
 	const chatId = msg.chat.id;
 	const text = msg.text || msg.caption;
-	/* if (msg.text.startsWith("/"))
-		if (msg.from.first_name.trim().startsWith("sam")) {
-			const msgWarn = await bot.sendMessage(msg.chat.id, "Procastinators are banned from using this bot.");
-			setTimeout(() => {
-				bot.deleteMessage(msg.chat.id, msgWarn.message_id);
-			}, 2000);
-		} */
+
 	if (msg.chat.type === "private" && !isUserAllowedToDM(msg.from.id)) {
 		return;
 	}
@@ -423,13 +413,9 @@ Here are the commands you can use:
 <b>Image & Media:</b>
 /unsplash - Generate quote image (reply to message)
 /wordcloud - Generate word cloud from recent messages
-/removebg - Remove background or delete sticker (also /rmbg, /deletesticker)
 /createsticker [emojis] - Create sticker from image (also /addsticker)
 
-<b>AI & Analysis:</b>
-/dream - Get dream interpretation
-/oracle [target] - Get oracle reading with audio
-/tldr - Summarize webpage or article
+<b>Analysis:</b>
 /archive - Get archive.org link for URL
 
 <b>Tarot Readings:</b>
@@ -444,7 +430,6 @@ Here are the commands you can use:
 
 <b>Search & Database:</b>
 /regex [pattern] - Search messages by regex
-/search [query] - Semantic search by meaning
 /count [pattern] - Count message occurrences
 /glossary [word] - Search glossary
 /addtoglossary word : definition - Add to glossary
@@ -535,12 +520,7 @@ Here are the commands you can use:
 						console.error(err);
 					});
 					break;
-				/* case "/political": {
-					const name = msg.text.split(" ").slice(1)[0];
-					const analysis = await getUserMessagesAndAnalyse(name, collection, chatId);
-					bot.sendMessage(chatId, "Output: \n" + analysis, { parse_mode: "HTML" });
-					break;
-				} */
+
 				case "/cc":
 				case "/currencyConvert":
 					const input = msg.text.split(" ").slice(1);
@@ -576,53 +556,6 @@ Here are the commands you can use:
 					});
 					break;
 
-				/*
-					if (msg.reply_to_message && (msg.reply_to_message.photo || msg.reply_to_message.sticker)) {
-						const userQuestion = msg.text.split(" ").slice(1).join(" ");
-						const photoArray = msg.reply_to_message.photo;
-						const highestQualityPhoto = photoArray ? photoArray[photoArray.length - 1] : msg.reply_to_message.sticker;
-						bot.getFile(highestQualityPhoto.file_id).then(async (file) => {
-							const fileUrl = `${process.env.LOCAL_TELEGRAM_API_URL || "http://localhost:8081"}/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
-							const response = await fetch(fileUrl);
-							const imageBuffer = await response.arrayBuffer();
-							const base64Image = Buffer.from(imageBuffer).toString("base64");
-
-							const basePrompt =
-								"Explain what's on this image like an OCR engine would but make it easy to parse what's on the image. Keep it short and on what seems important.";
-							const finalPrompt =
-								userQuestion.trim().length > 0 ? `${basePrompt}\n\nAdditionally, answer this question about the image: ${userQuestion}` : basePrompt;
-
-							const ollamaResponse = await axios.post(
-								"http://localhost:11434/api/generate",
-								{
-									model: "gemma2:2b",
-									prompt: finalPrompt,
-									images: [base64Image],
-									stream: false,
-								},
-								{
-									timeout: 600000,
-								}
-							);
-
-							const LLMTextOutput = ollamaResponse.data.response;
-							handleResponse(
-								`<blockquote expandable> ${LLMTextOutput.replace(/&/g, "&amp;")
-									.replace(/</g, "&lt;")
-									.replace(/>/g, "&gt;")
-									.replace(/"/g, "&quot;")
-									.replace(/'/g, "&#39;")}</blockquote>`,
-								msg,
-								msg.chat.id,
-								myCache,
-								bot,
-								null
-							).catch((err) => {
-								console.error(err);
-							});
-						});
-					}
-					break; */
 				case "/unsplash":
 					let replyToMessage = msg.reply_to_message;
 					if (msg.reply_to_message?.forward_from) {
@@ -829,11 +762,7 @@ Here are the commands you can use:
 								.addStickerToSet(process.env.STICKER_OWNER, stickerPackName, resizedImage, emojis)
 								.then(() => {
 									handleResponse(`<a href="t.me/addstickers/${stickerPackName}"> Done </a>`, msg, chatId, myCache, bot, null)
-										.then((message) => {
-											/*                     setTimeout(() => {
-                      bot.deleteMessage(chatId, message.message_id);
-                    }, 5000); */
-										})
+										.then((message) => {})
 										.catch((err) => {
 											console.error(err);
 										});
@@ -922,9 +851,7 @@ Here are the commands you can use:
 							});
 					}
 					break;
-				/* 			case "/quran":
-				handleResponse(`Sorry, @${msg.from.username}, I don't do it for the kuffar.`, msg, chatId, myCache, bot, null).catch((err) => {});
-				break; */
+
 				case "/glossary":
 					const query = msg.text.split(" ").slice(1).join(" ");
 					db.collection("glossary")
@@ -977,12 +904,7 @@ Here are the commands you can use:
 								textOutput = "Results : \n" + textOutput;
 							}
 							handleResponse(`<blockquote expandable>${textOutput}</blockquote>`, msg, chatId, myCache, bot, null)
-								.then((message) => {
-									/* setTimeout(() => {
-                  bot.deleteMessage(chatId, message.message_id);
-                  bot.deleteMessage(chatId, msg.message_id);
-                }, 30000); */
-								})
+								.then((message) => {})
 								.catch((err) => {
 									console.error(err);
 								});
@@ -1013,91 +935,7 @@ Here are the commands you can use:
 							consol.error(err);
 						});
 					break;
-				/*
-				case "/search":
-					const searchQuery = msg.text.split(" ").slice(1)?.join(" ");
-					if (!searchQuery || searchQuery.trim().length < 2) {
-						handleResponse(" Usage: /search <your query>", msg, chatId, myCache, bot, null).catch((err) => {
-							console.error(err);
-						});
-						break;
-					}
-					searchMessagesByEmbedding(db.collection("messages"), chatId, searchQuery)
-						.then((results) => {
-							let textOutput = results
-								.map((element) => {
-									//const similarityPercent = (element.similarity * 100).toFixed(1);
-									return `<a href="https://t.me/c/${element.chatId.toString().slice(4)}/${element.messageId}">${element.sender}: ${element.text.length > 30 ? element.text.slice(0, 30) + "..." : element.text}</a>`;
-								})
-								.join("\n");
-							if (textOutput.trim().length == 0) {
-								textOutput = "No results found.";
-							} else {
-								textOutput = "<blockquote expandable>Semantic search results:\n" + textOutput + "</blockquote>";
-							}
-							handleResponse(textOutput, msg, chatId, myCache, bot, null).catch((err) => {
-								console.error(err);
-							});
-						})
-						.catch((err) => {
-							console.error(err);
-							 handleResponse("Error performing semantic search. Please try again.", msg, chatId, myCache, bot, null).catch((e) => {
-								console.error(e);
-							}); 
-						});
-					break;*/
 
-				/* const currentMessageURL = extractUrl(msg.text);
-					const repliedToMessageURL = extractUrl(msg.reply_to_message?.text || msg.reply_to_message?.caption);
-					const msgQuestion = msg.text.split(" ").slice(1).join(" ").trim();
-					let webpageURL = currentMessageURL || repliedToMessageURL;
-					import("@extractus/article-extractor").then(async ({ extract }) => {
-						try {
-							if (!webpageURL) {
-								handleResponse("No link detected.", msg, chatId, myCache, bot, "i").catch((err) => {
-									console.error(err);
-								});
-								return;
-							}
-							const article = await extract(webpageURL);
-							const cleanedContent = article.content.replace(/<[^>]*>/g, "");
-							console.log("Extracted content:", cleanedContent);
-							const telegramHTMLPrompt = ``;
-							const prompt = "Generate a tldr for this article.";
-							let request = `${cleanedContent} ${prompt}\n ${telegramHTMLPrompt}`;
-							if (repliedToMessageURL && msgQuestion.length) {
-								request = `Give a short answer to this question ${msgQuestion}. Here's the article to repond to the question: ${cleanedContent}\n ${telegramHTMLPrompt}`;
-							}
-
-							const tldrMessage = await bot.sendMessage(msg.chat.id, `<blockquote expandable>One sec...</blockquote>`, {
-								parse_mode: "HTML",
-							});
-
-							const summary = await sendSimpleRequestToDeepSeek(request);
-							const summaryMessageBlocks = createMessageBlocks(summary);
-							await bot.editMessageText(`<blockquote expandable>${summaryMessageBlocks[0].replace(/<\/?p>/g, "")}</blockquote>`, {
-								parse_mode: "HTML",
-								message_id: tldrMessage.message_id,
-								chat_id: msg.chat.id,
-							});
-							let previousMessage = tldrMessage;
-							if (summaryMessageBlocks.length > 1) {
-								for (let i = 1; i < summaryMessageBlocks.length; i++) {
-									previousMessage = await bot.sendMessage(
-										chatId,
-										`Part ${i + 1}: <blockquote expandable> ${summaryMessageBlocks[i].replace(/<\/?p>/g, "")}</blockquote>`,
-										{
-											parse_mode: "HTML",
-											reply_to_message_id: previousMessage.message_id,
-										}
-									);
-								}
-							}
-						} catch (err) {
-							console.error(err);
-						}
-					});
-					break; */
 				case "/archive":
 					const articleURL = extractUrl(msg?.reply_to_message?.text) || extractUrl(msg.text);
 					if (articleURL) {
@@ -1158,108 +996,7 @@ Here are the commands you can use:
 						await bot.sendMessage(msg.chat.id, `<a href="${output.albumLink}">${output.name}</a>`, { parse_mode: "HTML", reply_to_message_id: msg.messageId });
 					}
 					break;
-				/* case "/trans":
-					{
-						let textMsg = text.split(" ").slice(1).join(" ");
-						const translateString = (textMsg.trim().length ? textMsg : msg.quote?.text || msg.reply_to_message?.text || msg.reply_to_message?.caption) || "";
-						const ollamaResponse = await axios.post(
-							"http://localhost:11434/api/generate",
-							{
-								model: "gemma2:2b",
-								prompt: `translate this sentence to English: ${translateString}. Only reply with the translation.`,
-								stream: false,
-							},
-							{
-								timeout: 600000,
-							}
-						);
 
-						const summary = ollamaResponse.data.response;
-						const summaryBlocks = createMessageBlocks(summary);
-
-						let previousMessage = await bot.sendMessage(chatId, `<blockquote expandable>${summaryBlocks[0]}</blockquote>`, {
-							parse_mode: "HTML",
-						});
-						if (summaryBlocks.length > 1) {
-							for (let i = 1; i < summaryBlocks.length; i++) {
-								previousMessage = await bot.sendMessage(chatId, `Part ${i + 1}: <blockquote expandable>${summaryBlocks[i]}</blockquote>`, {
-									parse_mode: "HTML",
-									reply_to_message_id: previousMessage.message_id,
-								});
-							}
-						}
-					}
-					break;
- */ /*
-				case "/summary":
-					handleResponse("I disabled it because it was bad anyway.", msg, chatId, myCache, bot, null).catch((err) => {
-						console.error(err);
-					});
-					break;
-				 
-					let limit = parseInt(msg.text.split(" ")[1]) || 100;
-					limit = limit > 100 ? 100 : limit;
-					limit = limit < 50 ? 50 : limit;
-					const summaryLoadingMessage = await bot.sendMessage(
-						msg.chat.id,
-						`<blockquote expandable>Fetching last ${limit} messages and generating summary...</blockquote>`,
-						{
-							parse_mode: "HTML",
-						}
-					);
-
-					try {
-						const messages = await collection.find({ chatId }).sort({ date: -1 }).limit(limit).toArray();
-
-						if (messages.length === 0) {
-							await bot.editMessageText(`<blockquote expandable>No messages found in the database.</blockquote>`, {
-								parse_mode: "HTML",
-								message_id: summaryLoadingMessage.message_id,
-								chat_id: msg.chat.id,
-							});
-							break;
-						}
-
-						const formattedMessages = messages
-							.reverse()
-							.map((m) => `${m.sender}: ${m.text}`)
-							.join("\n");
-
-						const ollamaResponse = await axios.post(
-							"http://localhost:11434/api/generate",
-							{
-								model: "gemma2:2b",
-								prompt: `Please provide a concise summary of the following chat conversation. Focus on the main topics, key points, and any important decisions or conclusions:\n\n${formattedMessages}`,
-								stream: false,
-							},
-							{
-								timeout: 600000,
-							}
-						);
-
-						const summary = ollamaResponse.data.response;
-						const summaryBlocks = createMessageBlocks(summary);
-
-						await bot.editMessageText(`<blockquote expandable><b>Summary of last ${messages.length} messages:</b>\n\n${summaryBlocks[0]}</blockquote>`, {
-							parse_mode: "HTML",
-							message_id: summaryLoadingMessage.message_id,
-							chat_id: msg.chat.id,
-						});
-
-						let previousMessage = summaryLoadingMessage;
-						if (summaryBlocks.length > 1) {
-							for (let i = 1; i < summaryBlocks.length; i++) {
-								previousMessage = await bot.sendMessage(chatId, `Part ${i + 1}: <blockquote expandable>${summaryBlocks[i]}</blockquote>`, {
-									parse_mode: "HTML",
-									reply_to_message_id: previousMessage.message_id,
-								});
-							}
-						}
-					} catch (err) {
-						console.error("Error generating summary:", err);
-						await bot.deleteMessage(msg.chat.id, summaryLoadingMessage.message_id);
-					}
-					break; */
 				case "/news":
 					let city = text.split(" ").slice(1).join(" ");
 					const news = await getLocalNews(city);
@@ -1267,65 +1004,6 @@ Here are the commands you can use:
 						console.error(e);
 					});
 					break;
-				/* case "/voiceTarot1":
-			case "/voiceTarot3":
-			case "/voiceTarot10": {
-				const cardsToDraw = Number(msg.text.split("tarot")[1]) || 3;
-				const userQuestion = msg.text.split(" ").splice(1).join(" ");
-				const { slideshowPath, reading, imagePaths } = await getReading(cardsToDraw);
-				const fileOptions = {
-					filename: "video.mp4",
-					contentType: "video/mp4",
-				};
-				const voiceMap = {
-					Dasha: "en_US-kathleen-low",
-					Anna: "en_US-hfc_female-medium",
-				};
-				const llmRequest = `
-					Generate a tarot reading for ${[msg.from.first_name, msg.from.last_name].join(" ").trim()} (@${msg.from.username}) based on these cards: ${reading.join(",")}.
-
-					The response MUST be a valid JSON array of objects, with no introductory text or markdown formatting around the JSON itself.
-
-					Each object in the array represents a turn in a conversation and must contain two keys:
-					1. "speaker": A string with the value "Dasha" or "Anna".
-					2. "text": A string containing their dialogue. The text in this field should be formatted for Telegram's HTML parse mode (e.g., using <b> for bold, <i> for italics).
-
-					Here is an example of the required format:
-					\`\`\`json
-					[
-					{ "speaker": "Dasha", "text": "Okay, so like, for the querent, the first card is The Tower. It’s giving… <b>catastrophe</b>." },
-					{ "speaker": "Anna", "text": "Literally. A complete and utter systems collapse. Very chic, actually. It means you get to rebuild from the ashes." },
-					{ "speaker": "Dasha", "text": "Right. And then they got the Ten of Swords. So, total annihilation, betrayal, rock bottom. But, like, in a <i>cleansing</i> way?" },
-					{ "speaker": "Anna", "text": "It’s the end of a cycle. You have to hit the bottom to have a big bounce-back. It’s pure potentiality." }
-					]
-					\`\`\`
-
-					The content of the conversation should be a tarot reading performed by Dasha Nekrasova and Anna Khachiyan from the Red Scare podcast.
-					
-					${userQuestion.trim().length > 0 ? `The reading should address this specific question: "${userQuestion}"` : ""}
-
-					Guidelines for the conversation content:
-					- It should include their typical banter, cultural references, and sardonic tone.
-					- They must directly address ${msg.from.username ? `@${msg.from.username}` : "the querent"} during the reading.
-					- Interpret each card's meaning in relation to the others.
-					- Maintain the nihilistic yet insightful tone of the podcast.
-					- Include references to psychoanalysis, cultural theory, or art when relevant.
-					- End with some form of conclusion about the querent's situation.
-					- DO NOT say that something is "very [insert thinker's name]" in the tarot cards.
-					- If there's a natural opportunity for a clever wordplay or joke related to the querent's name that fits the reading's context, include it, but do not force it.
-					- The dialogue should include non-verbal cues for text-to-speech. Use bracketed text for actions like [laughter], [laughs], [sighs], [gasps], [clears throat], or [music]. Use em dashes (—) or ellipses (...) for hesitations, ♪ for song lyrics, and CAPITALIZATION for emphasizing a word.
-					`;
-
-				const interpretation = await sendSimpleRequestToClaude(llmRequest);
-				const conversationData = JSON.parse(interpretation.content[0].text).map((sentence) => {
-					sentence.voice = voiceMap[sentence.speaker];
-					return sentence;
-				});
-				console.log(conversationData);
-				const outputFile = await createConversationAudio(conversationData, "data/" + makeid() + "_tarot.wav");
-				await bot.sendAudio(chatId, outputFile);
-				break;
-			} */
 			}
 		}
 	} catch (err) {
