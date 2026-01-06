@@ -127,8 +127,8 @@ async function downloadVideoFromUrl(text, forceAudio, callback) {
 		`"${link}"`,
 		`-P "${destinationFolder}"`,
 
-		isAudioOnly ? '-x --audio-format mp3 -f "bestaudio/best"' : '-f "bv*[vcodec^=avc1][ext=mp4]+ba*[acodec^=mp4a]/b[ext=mp4]"',
-
+		isAudioOnly ? '-x --audio-format mp3 -f "bestaudio/best"' : '-f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"',
+		" --trim-filenames 10",
 		"--merge-output-format mp4",
 		'--postprocessor-args "ffmpeg:-movflags +faststart"',
 		`--cookies ${os.homedir()}/cookies.txt`,

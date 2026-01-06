@@ -3,6 +3,54 @@ const escapeHTML = (str) => {
 	if (typeof str !== "string") return str;
 	return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 };
+
+async function getForecastDay(location, dayIndex = 0, degreeType = "C") {
+	if (dayIndex < 0 || dayIndex > 6 || !Number.isFinite(dayIndex)) {
+		dayIndex = 0;
+	}
+
+	const apiKey = process.env.WEATHER_API;
+	const url = `http://api.weatherapi.com/v1/forecast.json?key=${apiKey}&q=${location}&days=${dayIndex + 2}&aqi=yes&alerts=no`;
+
+	try {
+		const response = await axios.get(url);
+		const apiData = response.data;
+
+		const day = dayIndex >= apiData.forecast.forecastday.length ? apiData.forecast.forecastday.slice(-1)[0] : apiData.forecast.forecastday[dayIndex];
+
+		const item = {
+			location: {
+				name: [apiData.location.name, apiData.location.region, apiData.location.country].filter((e) => e && e.trim().length).join(", "),
+				degreetype: degreeType,
+				localTime: apiData.location.localtime,
+			},
+			forecast: {
+				info: dayIndex >= apiData.forecast.forecastday.length ? `No forecast for day ${dayIndex}; using ${apiData.forecast.forecastday.length}. :(` : "",
+				date: day.date,
+				low: degreeType === "C" ? day.day.mintemp_c : day.day.mintemp_f,
+				high: degreeType === "C" ? day.day.maxtemp_c : day.day.maxtemp_f,
+				condition: day.day.condition.text,
+				uv: day.day.uv,
+				astro: day.astro,
+				air: day.day?.air_quality,
+				chanceOfRain: day.day.daily_chance_of_rain,
+				chanceOfSnow: day.day.daily_chance_of_snow,
+				totalPrecip: degreeType === "C" ? day.day.totalprecip_mm : day.day.totalprecip_in,
+				maxWind: day.day.maxwind_mph,
+			},
+		};
+
+		return getFormattedForecastData(item);
+	} catch (err) {
+		if (err.response?.data?.error) {
+			console.error("API Error:", err.response.data.error.message);
+			return err.response.data.error.message;
+		}
+		console.error(err);
+		return "@ibouprofen, fix me pls";
+	}
+}
+
 async function getWeather(location, degreeType = "C") {
 	const apiKey = process.env.WEATHER_API;
 
@@ -43,11 +91,10 @@ async function getWeather(location, degreeType = "C") {
 		if (err.response && err.response.data && err.response.data.error) {
 			const apiErrorMessage = err.response.data.error.message;
 			console.error("API Error:", apiErrorMessage);
-			console.error(apiErrorMessage);
-			return "I bet there was a typo in ur msg smh (details: " + apiErrorMessage + ")\n<b>You can just edit your message, btw.</b>";
+			return apiErrorMessage;
 		}
 		console.error(err);
-		return "@swaggeux, fix me pls";
+		return "@ibouprofen, fix me pls";
 	}
 }
 
@@ -55,81 +102,23 @@ function getFormattedWeatherData(item) {
 	const cToF = (c) => (c * 9) / 5 + 32;
 	const fToC = (f) => ((f - 32) * 5) / 9;
 
-	const getTempEmoji = (temp, unit) => {
-		const tempC = unit === "C" ? temp : fToC(temp);
-		if (tempC >= 35) return "🔥";
-		if (tempC >= 25) return "☀️";
-		if (tempC >= 15) return "🌤️";
-		if (tempC >= 5) return "🌥️";
-		if (tempC >= -5) return "❄️";
-		return "🥶";
-	};
-
-	const getHumidityEmoji = (humidity) => {
-		if (humidity >= 80) return "💧";
-		if (humidity >= 60) return "💦";
-		return "🌵";
-	};
-
-	const getConditionEmoji = (condition) => {
-		const lower = condition.toLowerCase();
-		if (lower.includes("sunny") || lower.includes("clear")) return "☀️";
-		if (lower.includes("partly cloudy")) return "⛅";
-		if (lower.includes("cloudy") || lower.includes("overcast")) return "☁️";
-		if (lower.includes("rain") || lower.includes("drizzle")) return "🌧️";
-		if (lower.includes("thunder") || lower.includes("storm")) return "⛈️";
-		if (lower.includes("snow") || lower.includes("blizzard")) return "❄️";
-		if (lower.includes("fog") || lower.includes("mist")) return "🌫️";
-		if (lower.includes("sleet")) return "🌨️";
-		return "🌤️";
-	};
-
-	const getWindEmoji = (windSpeed) => {
-		const speed = parseFloat(windSpeed);
-		if (speed >= 25) return "💨";
-		if (speed >= 15) return "🍃";
-		return "🌬️";
-	};
-
-	const getRainEmoji = (chance) => {
-		if (chance >= 70) return "🌧️";
-		if (chance >= 40) return "🌦️";
-		return "☔";
-	};
-
-	const getSnowEmoji = (chance) => {
-		if (chance >= 70) return "❄️";
-		return "🌨️";
-	};
-
-	const getAirQualityEmoji = (index) => {
-		if (index === 1) return "✅";
-		if (index === 2) return "🟡";
-		if (index === 3) return "🟠";
-		if (index === 4) return "🔴";
-		if (index === 5) return "🟣";
-		if (index === 6) return "🟤";
-		return "❓";
-	};
-
 	const formatTemp = (temp, unit) => {
-		const emoji = getTempEmoji(temp, unit);
-		if (unit === "C") return `${temp}°C (${cToF(temp).toFixed(1)}°F) ${emoji} `;
-		if (unit === "F") return `${temp}°F (${fToC(temp).toFixed(1)}°C) ${emoji} `;
-		return `${temp}°${unit} ${emoji}`;
+		if (unit === "C") return `${temp}°C (${cToF(temp).toFixed(1)}°F)`;
+		if (unit === "F") return `${temp}°F (${fToC(temp).toFixed(1)}°C)`;
+		return `${temp}°${unit}`;
 	};
 	const formatUsEpaIndex = (i) => {
 		const labels = ["Unknown", "Good", "Moderate", "Unhealthy (Sensitive)", "Unhealthy", "Very Unhealthy", "Hazardous"];
-		return `${labels[i] || "Unknown"} ${getAirQualityEmoji(i)} `;
+		return `${labels[i] || "Unknown"}`;
 	};
 
 	const lines = [
 		`<b>Location:</b> ${escapeHTML(item.location.name)}`,
 		`<b>Temp:</b> ${formatTemp(item.current.temperature, item.location.degreetype)}`,
 		`<b>Feels like:</b> ${formatTemp(item.current.feelslike, item.location.degreetype)}`,
-		`<b>Humidity:</b> ${item.current.humidity}% ${getHumidityEmoji(item.current.humidity)}`,
-		`<b>Conditions:</b> ${escapeHTML(item.current.skytext)} ${getConditionEmoji(item.current.skytext)}`,
-		`<b>Wind:</b> ${escapeHTML(item.current.winddisplay)} ${getWindEmoji(item.current.winddisplay)}`,
+		`<b>Humidity:</b> ${item.current.humidity}%`,
+		`<b>Conditions:</b> ${escapeHTML(item.current.skytext)}`,
+		`<b>Wind:</b> ${escapeHTML(item.current.winddisplay)}`,
 		`<b>Low / High:</b> ${formatTemp(item.forecast.low, item.location.degreetype)} / ${formatTemp(item.forecast.high, item.location.degreetype)}`,
 		`<b>Time:</b> Local ${item.location.localTime} | Observation ${item.current.observationtime}`,
 	];
@@ -138,16 +127,76 @@ function getFormattedWeatherData(item) {
 
 	if (item.forecast.chanceOfRain > 0) {
 		const precipUnit = item.location.degreetype === "C" ? "mm" : "in";
-		lines.push(
-			`<b>Rain:</b> ${item.forecast.chanceOfRain}% chance, ${item.forecast.totalPrecip}${precipUnit} expected ${getRainEmoji(item.forecast.chanceOfRain)}`
-		);
+		lines.push(`<b>Rain:</b> ${item.forecast.chanceOfRain}% chance, ${item.forecast.totalPrecip}${precipUnit} expected`);
 	}
 
 	if (item.forecast.chanceOfSnow > 0) {
-		lines.push(`<b>Snow:</b> ${item.forecast.chanceOfSnow}% chance ${getSnowEmoji(item.forecast.chanceOfSnow)}`);
+		lines.push(`<b>Snow:</b> ${item.forecast.chanceOfSnow}% chance`);
 	}
 
 	return `<pre>${lines.join("\n")}</pre>`.replace("69%", "69% (nice)");
 }
 
-module.exports = { getWeather };
+function getFormattedForecastData(item) {
+	const cToF = (c) => (c * 9) / 5 + 32;
+	const fToC = (f) => ((f - 32) * 5) / 9;
+
+	const formatTemp = (temp, unit) => {
+		if (unit === "C") return `${temp}°C (${cToF(temp).toFixed(1)}°F)`;
+		if (unit === "F") return `${temp}°F (${fToC(temp).toFixed(1)}°C)`;
+		return `${temp}°${unit}`;
+	};
+
+	const formatUsEpaIndex = (i) => {
+		const labels = ["Unknown", "Good", "Moderate", "Unhealthy (Sensitive)", "Unhealthy", "Very Unhealthy", "Hazardous"];
+		return `${labels[i] || "Unknown"}`;
+	};
+
+	const lines = [
+		`${item.forecast.info}`,
+		`<b>Location:</b> ${escapeHTML(item.location.name)}`,
+		`<b>Date:</b> ${item.forecast.date}`,
+		`<b>Conditions:</b> ${escapeHTML(item.forecast.condition)}`,
+		`<b>Low / High:</b> ${formatTemp(item.forecast.low, item.location.degreetype)} / ${formatTemp(item.forecast.high, item.location.degreetype)}`,
+		`<b>UV:</b> ${item.forecast.uv}`,
+		`<b>Max wind:</b> ${item.forecast.maxWind} mph`,
+	].filter((str) => str?.trim()?.length);
+
+	if (item.forecast.air) {
+		lines.push(`<b>Air Quality:</b> ${formatUsEpaIndex(item.forecast.air["us-epa-index"])}`);
+	}
+
+	if (item.forecast.chanceOfRain > 0) {
+		const precipUnit = item.location.degreetype === "C" ? "mm" : "in";
+		lines.push(`<b>Rain:</b> ${item.forecast.chanceOfRain}% chance, ${item.forecast.totalPrecip}${precipUnit} expected`);
+	}
+
+	if (item.forecast.chanceOfSnow > 0) {
+		lines.push(`<b>Snow:</b> ${item.forecast.chanceOfSnow}% chance`);
+	}
+
+	if (item.forecast.astro) {
+		lines.push(`<b>Sun:</b> ↑ ${item.forecast.astro.sunrise} | ↓ ${item.forecast.astro.sunset}`);
+	}
+	const output = `<pre>${lines.join("\n")}</pre>`.replace("69%", "69% (nice)");
+	return output;
+}
+
+function extractDayOffset(input) {
+	input = input.toLowerCase();
+
+	if (input.includes("tomorrow")) return 1;
+
+	const match = input.match(/\b(?:in\s*)?(?:day\s*)?(\d+)\s*days?\b/);
+	if (match) return Number(match[1]);
+
+	return 0;
+}
+
+function extractLocation(input) {
+	return input
+		.replace(/\b(tomorrow|in\s*\d+\s*days?|day\s*\d+|\d+\s*days?)\b/gi, "")
+		.replace(/\s+/g, " ")
+		.trim();
+}
+module.exports = { getWeather, getForecastDay, extractDayOffset, extractLocation };

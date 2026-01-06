@@ -72,14 +72,18 @@ const { getMusicStats } = require("./utils/music");
 
 const myCache = new NodeCache();
 const axios = require("axios");
-const { getWeather } = require("./utils/weather");
+const { getWeather, getForecastDay, extractDayOffset, extractLocation } = require("./utils/weather");
 const { getUserMessagesAndAnalyse } = require("./utils/political");
 const { getLocalNews } = require("./utils/news");
+const { withBurnedSubtitles } = require("./utils/transcriber");
+const { getTimeAtLocation, findTimezones } = require("./utils/time");
 
 axios
 	.post(`${process.env.LOCAL_TELEGRAM_API_URL || "http://localhost:8081"}/bot${process.env.TELEGRAM_BOT_TOKEN}/setMyCommands`, {
 		commands: [
 			{ command: "help", description: "Display help message with all commands" },
+			{ command: "weather", description: "Get the weather" },
+			{ command: "forecast", description: "Get forecast" },
 			{ command: "8ball", description: "Get a Magic 8-Ball response" },
 			{ command: "coinflip", description: "Flip a coin" },
 			{ command: "calc", description: "Calculate mathematical expressions" },
@@ -103,6 +107,7 @@ axios
 			{ command: "downloadaudio", description: "Reply to a message with a URL to download audio or do /downloadaudio <url>" },
 			{ command: "download", description: "Reply to a message with a URL to download a video or do /download <url>" },
 			{ command: "cc", description: "Convert currency" },
+			{ command: "addsubtitles", description: "add subtitles to a video" },
 			{ command: "summary", description: "Summarize last N messages (default: 100)" },
 		],
 	})
@@ -196,10 +201,8 @@ async function handleTweetPreview(msg, text, chatId) {
 			disable_web_page_preview: true,
 			has_spoiler: text.includes("spoiler"),
 		};
-		const hasVideos = tweetData?.media?.some((media) => media.type == "VIDEO" || media.type == "GIF");
-		if (!hasVideos && !text.includes("old style")) {
-			await bot.sendPhoto(chatId, await generateTweetScreenshot(tweetData), messageOptions);
-		} else {
+		//const hasVideos = tweetData?.media?.some((media) => media.type == "VIDEO" || media.type == "GIF");
+		if (!text.includes("screenshot")) {
 			let tweetText = `${tweetData?.fullText} \nTweet by ${tweetData?.tweetBy?.fullName || ""} (@${tweetData?.tweetBy?.userName}) on ${tweetData?.createdAt || ""}`;
 			tweetData.media = tweetData.media || [];
 			tweetData.media = await Promise.all(
@@ -253,6 +256,8 @@ async function handleTweetPreview(msg, text, chatId) {
 					await bot.sendMessage(chatId, tweetTextParts[i], messageOptions);
 				}
 			}
+		} else {
+			await bot.sendPhoto(chatId, await generateTweetScreenshot(tweetData), messageOptions);
 		}
 	} catch (error) {
 		console.error("Failed to send tweet media:", error);
@@ -353,7 +358,24 @@ bot.on("text", async (msg) => {
 	if (msg.chat.type === "private" && !isUserAllowedToDM(msg.from.id)) {
 		return;
 	}
+	const probability = Math.random();
+	const triggerPattern = process.env.TRIGGER_TERMS || "";
+	const regex = new RegExp(`\\b(${triggerPattern})\\b`, "gi");
+	let count = 0;
+	for (const match of text.matchAll(regex)) {
+		count++;
+	}
+	const threshold = 0.1 * count;
+	if (regex.test(text) && probability < threshold) {
+		const cacheKey = `trigger-voice-${chatId}`;
+		const lastTriggerDate = myCache.get(cacheKey);
+		const now = new Date();
 
+		if (!lastTriggerDate || now - lastTriggerDate > 24 * 60 * 60 * 1000) {
+			bot.sendVoice(chatId, fs.readFileSync("audio/hihi.ogg"), { reply_to_message_id: msg.message_id });
+			myCache.set(cacheKey, now);
+		}
+	}
 	await handleSocialMediaLinks(text, chatId, msg.message_id, msg);
 
 	await handleTweetPreview(msg, text, chatId);
@@ -553,10 +575,7 @@ Here are the commands you can use:
 						console.error(err);
 					});
 					break;
-				case "/ocr":
-					handleResponse("I disabled it since no one used it but if you want me to enable it, let me know.", msg, chatId, myCache, bot, null).catch((err) => {
-						console.error(err);
-					});
+
 				/*
 					if (msg.reply_to_message && (msg.reply_to_message.photo || msg.reply_to_message.sticker)) {
 						const userQuestion = msg.text.split(" ").slice(1).join(" ");
@@ -646,23 +665,22 @@ Here are the commands you can use:
 					if (msg?.from.id == process.env.STICKER_OWNER) deleteMsg();
 
 					break;
-				case "/weatherf":
-					const locationF = text.split(" ").slice(1).join(" ");
-					getWeather(locationF, "F")
-						.then(async (weatherData) => {
-							handleResponse(weatherData, msg, chatId, myCache, bot, null)
-								/*  .then((message) => {
-                setTimeout(() => {
-                  bot.deleteMessage(chatId, message.message_id);
-                }, 30000);
-              }) */
-								.catch((err) => {
+				case "/forecast":
+					{
+						const userInput = text.split(" ").slice(1).join(" ");
+
+						const dayIndex = extractDayOffset(userInput);
+						const location = extractLocation(userInput);
+						getForecastDay(location, dayIndex)
+							.then(async (weatherData) => {
+								handleResponse(weatherData, msg, chatId, myCache, bot, null).catch((err) => {
 									console.error(err);
 								});
-						})
-						.catch((err) => {
-							console.error(err);
-						});
+							})
+							.catch((err) => {
+								console.error(err);
+							});
+					}
 					break;
 				case "/weather":
 					const location = text.split(" ").slice(1).join(" ");
@@ -773,9 +791,23 @@ Here are the commands you can use:
 						});
 					}
 					break;
+				case "/addsubtitles":
+					const language = text.split(" ").slice(1).join(" ") || "en";
+					if (msg.reply_to_message && (msg.reply_to_message.video || msg.reply_to_message.document)) {
+						const file = await bot.getFile(msg.reply_to_message.video ? msg.reply_to_message.video.file_id : msg.reply_to_message.document.file_id);
+						withBurnedSubtitles(
+							file.file_path,
+							async ({ outputVideoPath }) => {
+								await bot.sendVideo(chatId, outputVideoPath, { reply_to_message_id: msg.message_id }, { filename: "video.mp4", contentType: "video/mp4" });
+								return;
+							},
+							{ language }
+						);
+					}
+					break;
+
 				case "/createsticker":
 				case "/addsticker":
-					console.log(msg.reply_to_message);
 					if (msg.reply_to_message && (msg.reply_to_message.photo || msg.reply_to_message.sticker || msg.reply_to_message.document)) {
 						const emojis = msg.text.split(" ").slice(1).join(" ").replace(/\s+/g, "");
 						if (!isEmojiString(emojis) && emojis.trim().length == 0) {
@@ -981,6 +1013,7 @@ Here are the commands you can use:
 							consol.error(err);
 						});
 					break;
+				/*
 				case "/search":
 					const searchQuery = msg.text.split(" ").slice(1)?.join(" ");
 					if (!searchQuery || searchQuery.trim().length < 2) {
@@ -1008,16 +1041,12 @@ Here are the commands you can use:
 						})
 						.catch((err) => {
 							console.error(err);
-							/* handleResponse("Error performing semantic search. Please try again.", msg, chatId, myCache, bot, null).catch((e) => {
+							 handleResponse("Error performing semantic search. Please try again.", msg, chatId, myCache, bot, null).catch((e) => {
 								console.error(e);
-							}); */
+							}); 
 						});
-					break;
-				case "/tldr":
-					handleResponse("Just read the article smh.", msg, chatId, myCache, bot, "i").catch((err) => {
-						console.error(err);
-					});
-					break;
+					break;*/
+
 				/* const currentMessageURL = extractUrl(msg.text);
 					const repliedToMessageURL = extractUrl(msg.reply_to_message?.text || msg.reply_to_message?.caption);
 					const msgQuestion = msg.text.split(" ").slice(1).join(" ").trim();
@@ -1090,11 +1119,14 @@ Here are the commands you can use:
 				case "/tarot3":
 				case "/tarot10":
 					const cardsToDraw = Number(msg.text.split("tarot")[1]) || 3;
-					const { reading, imagePaths } = await getReading(cardsToDraw);
-
-					await bot.sendMessage(msg.chat.id, reading.join("\n"), {
-						parse_mode: "HTML",
-					});
+					const { reading, slideshowPath } = await getReading(cardsToDraw);
+					await bot.sendVideo(
+						chatId,
+						slideshowPath,
+						{ reply_to_message_id: msg.message_id, parse_mode: "HTML", caption: `<blockquote expandable>${reading.join("\n")}</blockquote>` },
+						{ filename: "tarot_reading.mp4", contentType: "video/mp4" }
+					);
+					fs.unlinkSync(slideshowPath);
 
 					break;
 				case "/musicstats":
@@ -1103,6 +1135,21 @@ Here are the commands you can use:
 						parse_mode: "HTML",
 					});
 					break;
+				case "/clock": {
+					const location = text.split(" ").slice(1).join(" ");
+					const timeZone = findTimezones(location)[0];
+					if (!timeZone) {
+						handleResponse(`no timezone found for "${location}"`, msg, chatId, myCache, bot, "pre").catch((err) => {
+							console.error(err);
+						});
+						return;
+					}
+					const time = getTimeAtLocation(timeZone);
+					handleResponse(`Time in ${timeZone}: ${time}`, msg, chatId, myCache, bot, "pre").catch((err) => {
+						console.error(err);
+					});
+				}
+
 				case "/findalbum":
 					if (msg.reply_to_message.audio) {
 						const audio = msg.reply_to_message.audio;
@@ -1143,13 +1190,13 @@ Here are the commands you can use:
 						}
 					}
 					break;
- */
+ */ /*
 				case "/summary":
 					handleResponse("I disabled it because it was bad anyway.", msg, chatId, myCache, bot, null).catch((err) => {
 						console.error(err);
 					});
 					break;
-				/* 
+				 
 					let limit = parseInt(msg.text.split(" ")[1]) || 100;
 					limit = limit > 100 ? 100 : limit;
 					limit = limit < 50 ? 50 : limit;

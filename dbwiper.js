@@ -1,4 +1,3 @@
-// cleanup.js
 const { MongoClient } = require("mongodb");
 const schedule = require("node-schedule");
 const dotenv = require("dotenv");
@@ -23,7 +22,6 @@ async function clearMessageCollection() {
 		const db = client.db(dbName);
 		const collection = db.collection(collectionName);
 
-		// Calculate date 7 days ago
 		const sevenDaysAgo = moment().subtract(7, "days").toDate();
 
 		console.log(`[Cleanup] Checking for messages older than: ${sevenDaysAgo}`);

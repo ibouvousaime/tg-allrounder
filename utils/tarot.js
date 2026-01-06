@@ -14,8 +14,8 @@ function getReading(count) {
 			reversed: false,
 		}));
 		const imagePaths = reading.map((card) => "cards/" + card.image);
-		const slideshowPath = `${new Date().getTime()}.mp4`;
-		//await generateSlideShow(reading, slideshowPath);
+		const slideshowPath = path.join(os.tmpdir(), `${new Date().getTime()}.mp4`);
+		await generateSlideShow(reading, slideshowPath);
 		resolve({ imagePaths, slideshowPath, reading: reading.map((card) => card.name) });
 	});
 }
@@ -47,7 +47,7 @@ function generateSlideShow(cards, outputPath, durationPerImage = 3, fps = 30) {
 			.outputFPS(fps)
 			.videoCodec("libx264")
 			.outputOptions("-pix_fmt yuv420p")
-			.size("1280x720")
+			.size("640x360")
 			.on("end", () => {
 				fs.unlinkSync(tempFile);
 				resolve();
