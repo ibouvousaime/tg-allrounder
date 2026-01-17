@@ -29,16 +29,9 @@ async function withBurnedSubtitles(
 
 	try {
 		const output = await execAsync(
-			[
-				whisperBin,
-				`-m "${modelPath}"`,
-				`-l ${language}`,
-				"-osrt",
-				"--threads 2",
-				`-of "${path.join(tempDir, "subtitles")}"`,
-				`"${audioDestinationFile}"`,
-				"--translate",
-			].join(" "),
+			[whisperBin, `-m "${modelPath}"`, `-l ${language}`, "-osrt", "--threads 2", `-of "${path.join(tempDir, "subtitles")}"`, `"${audioDestinationFile}"`].join(
+				" "
+			),
 			{
 				maxBuffer: 1024 * 1024 * 10,
 			}

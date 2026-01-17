@@ -37,13 +37,16 @@
 		"node-schedule": "^2.1.1",
 		"node-telegram-bot-api": "^0.66.0",
 		"openai": "^6.7.0",
-		"puppeteer": "^22.13.1",
+		"puppeteer": "^22.15.0",
+		"puppeteer-extra": "^3.3.6",
+		"puppeteer-extra-plugin-stealth": "^2.11.2",
 		"rettiwt-api": "^5.0.1",
 		"sharp": "^0.33.4",
 		"spottydl": "^0.2.7",
 		"tesseract.js": "^5.1.0",
 		"tgfancy": "^0.13.0",
 		"weather-js": "^2.0.0",
+		"wiktionary-node": "^1.1.8",
 		"xml2js": "^0.6.2"
 	}
 }

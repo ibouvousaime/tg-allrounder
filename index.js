@@ -77,6 +77,9 @@ const { getUserMessagesAndAnalyse } = require("./utils/political");
 const { getLocalNews } = require("./utils/news");
 const { withBurnedSubtitles } = require("./utils/transcriber");
 const { getTimeAtLocation, findTimezones } = require("./utils/time");
+const { getRandomQuranVerse } = require("./utils/quran");
+const { screenshotRedditPost, extractOldRedditLink } = require("./utils/reddit");
+const { getWiktionaryPages } = require("./utils/wikitionary");
 
 axios
 	.post(`${process.env.LOCAL_TELEGRAM_API_URL || "http://localhost:8081"}/bot${process.env.TELEGRAM_BOT_TOKEN}/setMyCommands`, {
@@ -211,7 +214,7 @@ async function handleTweetPreview(msg, text, chatId) {
 							reject(err);
 						}
 					});
-				})
+				}),
 			);
 
 			const media = tweetData.media;
@@ -348,7 +351,7 @@ bot.on("text", async (msg) => {
 	if (msg.chat.type === "private" && !isUserAllowedToDM(msg.from.id)) {
 		return;
 	}
-	const probability = Math.random();
+	/* const probability = Math.random();
 	const triggerPattern = process.env.TRIGGER_TERMS || "";
 	const regex = new RegExp(`\\b(${triggerPattern})\\b`, "gi");
 	let count = 0;
@@ -365,7 +368,13 @@ bot.on("text", async (msg) => {
 			bot.sendVoice(chatId, fs.readFileSync("audio/hihi.ogg"), { reply_to_message_id: msg.message_id });
 			myCache.set(cacheKey, now);
 		}
-	}
+	} */
+
+	/* 	const redditLink = extractOldRedditLink(msg.text);
+	if (redditLink) {
+		const image = await screenshotRedditPost(redditLink);
+		bot.sendPhoto(msg.chat.id, image);
+	} */
 	await handleSocialMediaLinks(text, chatId, msg.message_id, msg);
 
 	await handleTweetPreview(msg, text, chatId);
@@ -499,7 +508,7 @@ Here are the commands you can use:
 											{
 												reply_to_message_id: messageId,
 											},
-											{ filename: new Date() + "video.mp4", contentType: "video/mp4" }
+											{ filename: new Date() + "video.mp4", contentType: "video/mp4" },
 										);
 									} else {
 										const sentAudio = await bot.sendAudio(chatId, data, {
@@ -598,6 +607,13 @@ Here are the commands you can use:
 					if (msg?.from.id == process.env.STICKER_OWNER) deleteMsg();
 
 					break;
+				case "/no":
+					axios.get("https://naas.isalman.dev/no").then((response) => {
+						handleResponse(response.data.reason, msg, chatId, myCache, bot, null).catch((err) => {
+							console.error(err);
+						});
+					});
+					break;
 				case "/forecast":
 					{
 						const userInput = text.split(" ").slice(1).join(" ");
@@ -687,7 +703,7 @@ Here are the commands you can use:
 								chatId,
 								myCache,
 								bot,
-								"pre"
+								"pre",
 							).catch((err) => {
 								console.error(err);
 							});
@@ -734,7 +750,7 @@ Here are the commands you can use:
 								await bot.sendVideo(chatId, outputVideoPath, { reply_to_message_id: msg.message_id }, { filename: "video.mp4", contentType: "video/mp4" });
 								return;
 							},
-							{ language }
+							{ language },
 						);
 					}
 					break;
@@ -754,7 +770,6 @@ Here are the commands you can use:
 						console.log(highestQualityPhoto);
 						bot.getFile(highestQualityPhoto.file_id).then(async (file) => {
 							const arrayBuffer = fs.readFileSync(file.file_path);
-							fs.writeFileSync("tempfile", Buffer.from(arrayBuffer));
 							const imageBuffer = Buffer.from(arrayBuffer);
 							const resizedImage = await resizeImageBuffer(imageBuffer);
 							const stickerPackName = `hummus${chatId.toString().slice(4)}_by_${process.env.BOT_USERNAME}`;
@@ -794,7 +809,7 @@ Here are the commands you can use:
 							chatId,
 							myCache,
 							bot,
-							null
+							null,
 						).catch((err) => {
 							console.error(err);
 						});
@@ -843,7 +858,7 @@ Here are the commands you can use:
 										chatId,
 										myCache,
 										bot,
-										null
+										null,
 									).catch((err) => {
 										console.error(err);
 									});
@@ -962,7 +977,7 @@ Here are the commands you can use:
 						chatId,
 						slideshowPath,
 						{ reply_to_message_id: msg.message_id, parse_mode: "HTML", caption: `<blockquote expandable>${reading.join("\n")}</blockquote>` },
-						{ filename: "tarot_reading.mp4", contentType: "video/mp4" }
+						{ filename: "tarot_reading.mp4", contentType: "video/mp4" },
 					);
 					fs.unlinkSync(slideshowPath);
 
@@ -986,6 +1001,7 @@ Here are the commands you can use:
 					handleResponse(`Time in ${timeZone}: ${time}`, msg, chatId, myCache, bot, "pre").catch((err) => {
 						console.error(err);
 					});
+					break;
 				}
 
 				case "/findalbum":
@@ -1003,6 +1019,18 @@ Here are the commands you can use:
 					handleResponse(news, msg, chatId, myCache, bot, null, true).catch((e) => {
 						console.error(e);
 					});
+					break;
+				case "/quran":
+					const verseData = await getRandomQuranVerse();
+					handleResponse(verseData, msg, chatId, myCache, bot, null).catch((e) => {
+						console.error(e);
+					});
+					break;
+				case "/dict":
+					let searchQuery = text.split(" ").slice(1).join(" ");
+					console.log(searchQuery);
+					const pages = await getWiktionaryPages(searchQuery);
+					bot.sendPhoto(chatId, pages);
 					break;
 			}
 		}

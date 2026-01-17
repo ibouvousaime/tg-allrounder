@@ -16,21 +16,21 @@ function extractTweetId(url) {
 	}
 }
 
-function extractTweet(url) {
-	return new Promise((resolve, reject) => {
-		const tweetId = extractTweetId(url);
+async function extractTweet(urlOrId, isId = false, visited = new Set()) {
+	const tweetId = isId ? urlOrId : extractTweetId(urlOrId);
 
-		rettiwt.tweet
-			.details(tweetId, "id")
-			.then((res) => {
-				//fs.writeFileSync("./lastTweetData.json", JSON.stringify(res));
-				resolve(res);
-			})
-			.catch((err) => {
-				console.error(err);
-				reject();
-			});
-	});
+	if (visited.has(tweetId)) return null;
+	visited.add(tweetId);
+
+	const res = await rettiwt.tweet.details(tweetId, "id");
+	if (!res) return null;
+	if (res?.replyTo) {
+		const replyId = res.replyTo;
+
+		res.replyTo = await extractTweet(replyId, true, visited);
+	}
+
+	return res;
 }
 
 function renderMedia(media = []) {
@@ -55,8 +55,9 @@ function renderMedia(media = []) {
 							max-height: 420px;
 							overflow: hidden;
 							background: #000;
-						">
-							<img
+						"> ${
+							m.type == "PHOTO"
+								? `<img
 								src="${m.url}"
 								style="
 									width: 100%;
@@ -65,13 +66,83 @@ function renderMedia(media = []) {
 									object-fit: contain;
 									display: block;
 								"
-							/>
+							/>`
+								: `<video
+								src="${m.url}"
+								style="
+									width: 100%;
+									height: auto;
+									max-height: 420px;
+									object-fit: contain;
+									display: block;
+								"
+								controls
+							></video>`
+						}
+							
 						</div>
 					`
 				)
 				.join("")}
 		</div>
 	`;
+}
+function renderReplyChain(tweet) {
+	if (!tweet?.replyTo) return "";
+
+	return `
+		${renderReplyChain(tweet.replyTo)}
+		<div style="color:#8b98a5;font-size:14px;margin-bottom:6px;">
+			Replying to <span style="color:#1d9bf0;">@${tweet.replyTo.tweetBy.userName}</span>
+		</div>
+		${renderMiniTweet(tweet.replyTo)}
+	`;
+}
+function renderMiniTweet(t) {
+	if (!t) return "";
+	const quotedMediaHtml = renderMedia(t.quoted?.media);
+
+	const media = renderMedia(t.media);
+
+	return `
+    <div style="
+      border: 1px solid #333;
+      border-radius: 14px;
+      padding: 12px;
+      margin-bottom: 12px;
+      background: rgba(255,255,255,0.03);
+    ">
+      <div style="display:flex;align-items:center;margin-bottom:6px;">
+        <img src="${t.tweetBy.profileImage}" style="width:20px;height:20px;border-radius:50%;margin-right:8px;" />
+        <span style="font-weight:700;font-size:14px;">${t.tweetBy.fullName}</span>
+        <span style="color:#8b98a5;font-size:14px;margin-left:4px;">@${t.tweetBy.userName}</span>
+      </div>
+
+      <div style="font-size:14px;color:#eff3f4;line-height:1.4;">
+        ${t.fullText.replace(/\s+https:\/\/t\.co\/\w+$/, "").trim()}
+      </div>
+
+      ${media}
+
+	     ${
+					t.quoted
+						? `
+        <div style="border: 1px solid #333; border-radius: 16px; padding: 12px; margin-top: 10px; background: rgba(255,255,255,0.03);">
+          <div style="display: flex; align-items: center; margin-bottom: 4px;">
+            <img src="${t.quoted.tweetBy.profileImage}" style="width: 20px; height: 20px; border-radius: 50%; margin-right: 8px;" />
+            <span style="font-weight: 700; font-size: 14px;">${t.quoted.tweetBy.fullName}</span>
+            <span style="color: #8b98a5; font-size: 14px; margin-left: 4px;">@${t.quoted.tweetBy.userName}</span>
+          </div>
+          <div style="font-size: 14px; color: #eff3f4;">
+            ${t.quoted.fullText.replace(/\s+https:\/\/t\.co\/\w+$/, "").trim()}
+          </div>
+          ${quotedMediaHtml}
+        </div>
+      `
+						: ""
+				}
+    </div>
+  `;
 }
 
 function renderTweet(tweet) {
@@ -89,7 +160,7 @@ function renderTweet(tweet) {
       border: 1px solid rgba(255, 255, 255, 0.1);
       box-shadow: 0 10px 30px rgba(0,0,0,0.5);
     ">
-
+  ${renderReplyChain(tweet)} 
       <!-- Header -->
       <div style="display: flex; align-items: center; margin-bottom: 12px;">
         <img src="${tweet.tweetBy.profileImage}" style="width: 48px; height: 48px; border-radius: 50%; margin-right: 12px;" />
@@ -103,15 +174,12 @@ function renderTweet(tweet) {
         <div style="color: #8b98a5; font-size: 20px;">...</div>
       </div>
 
-      <!-- Text -->
       <div style="font-size: 19px; line-height: 1.4;">
         ${tweet.fullText.replace(/\s+https:\/\/t\.co\/\w+$/, "").trim()}
       </div>
 
-      <!-- Main tweet media -->
       ${mainMediaHtml}
 
-      <!-- Quoted tweet -->
       ${
 				tweet.quoted
 					? `
@@ -130,7 +198,6 @@ function renderTweet(tweet) {
 					: ""
 			}
 
-      <!-- Footer -->
       <div style="color: #8b98a5; font-size: 14px; margin-top: 15px; padding-bottom: 12px; border-bottom: 1px solid #333;">
         ${new Date(tweet.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · 
         ${new Date(tweet.createdAt).toLocaleDateString()}

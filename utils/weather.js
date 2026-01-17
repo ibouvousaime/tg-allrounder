@@ -59,6 +59,7 @@ async function getWeather(location, degreeType = "C") {
 	try {
 		const response = await axios.get(url);
 		const apiData = response.data;
+
 		const item = {
 			location: {
 				name: [apiData.location.name, apiData.location.region, apiData.location.country].filter((element) => element && element?.trim()?.length).join(", "),
