@@ -21,7 +21,6 @@ async function generateAllEmbeddings() {
 				const embeddingsArrray = embeddings.arraySync()[0];
 				const res = await collection.updateOne({ _id: new ObjectId(doc._id) }, { $set: { embeddings: embeddingsArrray } });
 				i++;
-				console.log(res, `${i}/${total}`);
 			}
 		});
 }

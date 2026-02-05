@@ -41,7 +41,6 @@ function findSimilarMessages(collection, chatId, regex) {
 					resolve(output);
 				});
 		} else {
-			console.log("not a regex", regex);
 		}
 	});
 }
@@ -90,7 +89,6 @@ function countSenders(collection, chatId, regex) {
 					reject();
 				});
 		} else {
-			console.log("not a regex", regex);
 			reject();
 		}
 	});

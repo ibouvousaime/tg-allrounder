@@ -19,7 +19,6 @@ async function getATriviaCategory(search) {
 				id: category.id,
 				name: category.name,
 			};
-			console.log("Category found:", result);
 			return result;
 		} else {
 			return defaultCategory;
@@ -41,7 +40,6 @@ function generateRandomString(length) {
 function getAndSendRandomQuestion(db, categoryStr, chatId, difficulty = "hard", repeat = true) {
 	return new Promise(async (resolve, reject) => {
 		const category = await getATriviaCategory(categoryStr);
-		console.log("Category:", category, categoryStr);
 		const url = `https://opentdb.com/api.php?amount=1&category=${category.id}&difficulty=${difficulty}`;
 		return axios
 			.get(url)
@@ -65,7 +63,7 @@ function getAndSendRandomQuestion(db, categoryStr, chatId, difficulty = "hard", 
 						process.env.TELEGRAM_BOT_TOKEN,
 						20,
 						true,
-						telegramOptions.findIndex((option) => option.text === question.correct_answer)
+						telegramOptions.findIndex((option) => option.text === question.correct_answer),
 					);
 					resolve(pollOutput);
 				} else {

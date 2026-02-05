@@ -285,7 +285,7 @@ function getTopNImportantWords(sentence, n = 100) {
 	const mostImportantWord = (await sendSimpleRequestToClaude(`Provide a 2-word search query for an image to describe: "${sentence}".`)).content[0].text
 		.split(" ")
 		.join("+");
-	console.log(mostImportantWord);
+;
 	return mostImportantWord;
 } */
 
@@ -346,7 +346,7 @@ function generateUnsplashImage(text, sender, useDefaultImages = false) {
 		try {
 			const lngDetector = new LanguageDetect();
 			lngDetector.setLanguageType("iso2");
-			const language = lngDetector.detect(text, 1)?.[0]?.[0] || 'eng';
+			const language = lngDetector.detect(text, 1)?.[0]?.[0] || "eng";
 			const keywords = darkNatureSearchTerms;
 			let chosenSearchTerm = useDefaultImages ? keywords[Math.floor(Math.random() * keywords.length)] : getMostImportantWord(text);
 			const textSubstitute = process.env.SUBSTITUTE_TEXT.split(" ");
@@ -412,7 +412,7 @@ function doOCR(language, imageBuffer) {
 				await worker.terminate();
 			} else {
 				resolve(
-					`${language} is not supported. Please consult <a href="https://tesseract-ocr.github.io/tessdoc/Data-Files#data-files-for-version-400-november-29-2016">this page</a> to figure out the language code you're looking for. Remember you can just edit your message and this text will be updated.`
+					`${language} is not supported. Please consult <a href="https://tesseract-ocr.github.io/tessdoc/Data-Files#data-files-for-version-400-november-29-2016">this page</a> to figure out the language code you're looking for. Remember you can just edit your message and this text will be updated.`,
 				);
 			}
 		} catch (err) {

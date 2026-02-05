@@ -52,7 +52,6 @@ async function evaluateAndGroupLabels(messages) {
 export async function getUserMessagesAndAnalyse(name, collection, chatId) {
 	const messages = await collection.find({ sender: { $regex: name }, chatId }).toArray();
 	const textMessages = messages.map((message) => message.text).filter((text) => text && text.length);
-	console.log(textMessages.slice(0, 5));
 	const output = await evaluateAndGroupLabels(textMessages);
 	let textOuput = "";
 	for (const label in output) {

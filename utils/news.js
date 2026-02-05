@@ -12,7 +12,6 @@ export async function getLocalNews(city) {
 				apikey: apiKey,
 			},
 		});
-		console.log(response.data.articles[0]);
 		return (
 			`<blockquote expandable>` +
 			response.data.articles

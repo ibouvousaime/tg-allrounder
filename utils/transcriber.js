@@ -10,7 +10,7 @@ const execAsync = promisify(exec);
 async function withBurnedSubtitles(
 	inputVideoPath,
 	callback,
-	{ language = "en", modelPath = os.homedir() + "/whisper.cpp/models/ggml-base.bin", whisperBin = os.homedir() + "/whisper.cpp/build/bin/whisper-cli" } = {}
+	{ language = "en", modelPath = os.homedir() + "/whisper.cpp/models/ggml-base.bin", whisperBin = os.homedir() + "/whisper.cpp/build/bin/whisper-cli" } = {},
 ) {
 	if (!fsSync.existsSync(inputVideoPath)) {
 		throw new Error("Input video does not exist");
@@ -30,13 +30,12 @@ async function withBurnedSubtitles(
 	try {
 		const output = await execAsync(
 			[whisperBin, `-m "${modelPath}"`, `-l ${language}`, "-osrt", "--threads 2", `-of "${path.join(tempDir, "subtitles")}"`, `"${audioDestinationFile}"`].join(
-				" "
+				" ",
 			),
 			{
 				maxBuffer: 1024 * 1024 * 10,
-			}
+			},
 		);
-		console.log("Whisper output:", output.stdout, output.stderr);
 		if (!fsSync.existsSync(subtitlePath)) {
 			throw new Error("no srt generated");
 		}
@@ -49,7 +48,7 @@ async function withBurnedSubtitles(
 				`-vf "subtitles='${subtitlePath}':force_style='FontSize=16,Outline=2'"`,
 				"-c:a copy",
 				`"${outputVideoPath}"`,
-			].join(" ")
+			].join(" "),
 		);
 
 		await callback({

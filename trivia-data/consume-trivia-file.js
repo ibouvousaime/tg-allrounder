@@ -36,7 +36,6 @@ const filteredFiles = fs.readdirSync(".").filter((file) => file.startsWith("filt
 for (const file of filteredFiles) {
 	try {
 		fs.unlinkSync(file);
-		console.log(`Deleted file: ${file}`);
 	} catch (err) {
 		console.error(`Error deleting file ${file}:`, err);
 	}
@@ -50,7 +49,6 @@ for (const filename of filenames) {
 			if (err) {
 				console.error("Error inserting data into MongoDB:", err);
 			} else {
-				console.log(`Inserted ${result.insertedCount} documents from ${filename}`);
 			}
 		});
 	}

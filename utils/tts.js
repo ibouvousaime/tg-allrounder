@@ -20,7 +20,6 @@ async function textToSpeech(text, voice, fullOutputPath = "output.wav") {
 
 		return new Promise((resolve, reject) => {
 			writer.on("finish", () => {
-				console.log(`saved audio to ${fullOutputPath}`);
 				resolve(fullOutputPath);
 			});
 			writer.on("error", (err) => {
@@ -65,7 +64,7 @@ async function textToSpeech(text, voice, fullOutputPath = "output.wav") {
 
 		await fs.writeFile(finalOutputPath, audioBuffer);
 
-		console.log(`saved conversation audio to ${finalOutputPath}`);
+;
 		return finalOutputPath;
 	} catch (error) {
 		console.error("Error:", error);
@@ -75,7 +74,6 @@ async function textToSpeech(text, voice, fullOutputPath = "output.wav") {
 
 async function createConversationAudio(conversation, finalOutputPath = "conversation.wav") {
 	const tempDir = await fs.promises.mkdtemp(path.join(__dirname, "temp-audio-"));
-	console.log(`Created temporary directory: ${tempDir}`);
 	const audioClips = [];
 
 	try {

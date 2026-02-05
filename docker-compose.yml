@@ -1,10 +1,46 @@
+volumes:
+  mongo_data:
+  meili_data:
+
 services:
   mongodb:
-    image: mongo
+    image: mongo:7
     restart: always
+    volumes:
+      - mongo_data:/data/db
     ports:
       - 127.0.0.1:27017:27017
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
-    command: ["--auth"]
+    command:
+      - "--auth"
+      - "--wiredTigerCacheSizeGB"
+      - "1.0"
+    deploy:
+      resources:
+        limits:
+          memory: 1500M
+          cpus: "1.0"
+  meilisearch:
+    image: getmeili/meilisearch:v1.6
+    restart: always
+    volumes:
+      - meili_data:/meili_data
+    ports:
+      - 127.0.0.1:7700:7700
+    environment:
+      MEILI_ENV: production
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
+      MEILI_NO_ANALYTICS: "true"
+    command: >
+      meilisearch
+      --db-path /meili_data
+      --http-addr 0.0.0.0:7700
+      --max-indexing-memory 256MB
+      --max-indexing-threads 1
+      --log-level WARN
+    deploy:
+      resources:
+        limits:
+          memory: 1500M

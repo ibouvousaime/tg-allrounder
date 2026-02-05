@@ -51,7 +51,6 @@ async function extractAndEchoSocialLink(text, callback) {
 		text = spotifyConvertedLink;
 		audioMode = true;
 		filename = name;
-		console.log("spotify detected", spotifyConvertedLink);
 	}
 	const socialLinkRegex =
 		/(https?:\/\/(www\.)?((tiktok\.com|vm\.tiktok\.com|music\.youtube\.com|soundcloud\.com|on\.soundcloud\.com)\/|youtube\.com\/shorts\/)[^\s]+)/;
@@ -74,12 +73,10 @@ async function extractAndEchoSocialLink(text, callback) {
 		`--cookies ${os.homedir()}/cookies.txt`,
 	].join(" ");
 	const galleryDlCommand = `${os.homedir()}/.local/bin/gallery-dl "${link}" --dest "${destinationFolder}" --cookies ${os.homedir()}/cookies.txt`;
-	console.log(ytDlpCommand);
 	try {
 		try {
 			await execPromise(ytDlpCommand);
 		} catch (ytDlpError) {
-			console.log(ytDlpError);
 			console.error(`yt-dlp failed, trying gallery-dl...`);
 			await execPromise(galleryDlCommand);
 			usedGalleryDL = true;
@@ -93,7 +90,6 @@ async function extractAndEchoSocialLink(text, callback) {
 			console.error("Download succeeded, but no file was found.");
 		}
 	} catch (error) {
-		console.log(galleryDlCommand);
 		console.error(`All download attempts failed: ${error}`);
 	} finally {
 		setTimeout(() => {
@@ -133,7 +129,12 @@ async function downloadVideoFromUrl(text, forceAudio, callback) {
 		'--postprocessor-args "ffmpeg:-movflags +faststart"',
 		`--cookies ${os.homedir()}/cookies.txt`,
 	];
-	console.log("downloading with", ytDlpCommandArgs);
+	const ytdlpUpdateCommand = `${ytdlpPath} -U`;
+	try {
+		await execPromise(ytdlpUpdateCommand);
+	} catch (updateError) {
+		console.error("yt-dlp update failed:", updateError);
+	}
 	try {
 		await spawnPromise(ytdlpPath, ytDlpCommandArgs);
 

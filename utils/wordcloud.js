@@ -2,7 +2,6 @@ function getWordCloudPage(wordArray) {
 	wordArray = wordArray.map((word) => {
 		return { text: word.text, size: Math.floor(word.size * 100) };
 	});
-	console.log(JSON.stringify(wordArray));
 	return `<!DOCTYPE html>
 <html lang="en">
 <head>

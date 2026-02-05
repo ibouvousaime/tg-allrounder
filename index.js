@@ -1,5 +1,7 @@
 const Tgfancy = require("tgfancy");
-
+Array.prototype.random = function () {
+	return this[Math.floor(Math.random() * this.length)];
+};
 require("dotenv").config();
 const { exec } = require("child_process");
 const NodeCache = require("node-cache");
@@ -9,8 +11,8 @@ const { removeImageBackground, generateUnsplashImage, doOCR, generateWordCloud, 
 const { sendSimpleRequestToClaude, sendRequestWithImageToClaude, guessMediaType, sendSimpleRequestToDeepSeek } = require("./utils/ai");
 const fs = require("fs");
 const math = require("mathjs");
-const { getWordEtymology } = require("./utils/dictionary");
-
+const { getWordEtymology, lookupWord } = require("./utils/dictionary");
+const { sleepQuotes } = require("./utils/sleepQuotes");
 const bot = new Tgfancy(process.env.TELEGRAM_BOT_TOKEN, {
 	baseApiUrl: process.env.LOCAL_TELEGRAM_API_URL || "http://localhost:8081",
 	polling: true,
@@ -42,7 +44,6 @@ const eightBallResponses = [
 	"Very doubtful",
 ];
 const mongoUri = process.env.MONGO_URI;
-
 const client = new MongoClient(mongoUri, {
 	useNewUrlParser: true,
 	useUnifiedTopology: true,
@@ -52,6 +53,7 @@ const db = client.db("messages");
 const collection = db.collection("messages");
 const musicCollection = db.collection("music");
 const tarotCollection = db.collection("tarot");
+const dictionaryCollection = client.db("wiktionary").collection("words");
 
 const { Convert } = require("easy-currencies");
 const { extractAndConvertToCm } = require("./utils/converter");
@@ -80,6 +82,9 @@ const { getTimeAtLocation, findTimezones } = require("./utils/time");
 const { getRandomQuranVerse } = require("./utils/quran");
 const { screenshotRedditPost, extractOldRedditLink } = require("./utils/reddit");
 const { getWiktionaryPages } = require("./utils/wikitionary");
+const { sanitizeTelegramHtml } = require("./utils/html-sanitizer");
+const { findAuslanSignVideoLink } = require("./utils/auslan");
+const { renderLatexToPngBuffer } = require("./utils/latex");
 
 axios
 	.post(`${process.env.LOCAL_TELEGRAM_API_URL || "http://localhost:8081"}/bot${process.env.TELEGRAM_BOT_TOKEN}/setMyCommands`, {
@@ -112,11 +117,12 @@ axios
 			{ command: "cc", description: "Convert currency" },
 			{ command: "addsubtitles", description: "add subtitles to a video" },
 			{ command: "summary", description: "Summarize last N messages (default: 100)" },
+			{ command: "quran", description: "Get a random Quran verse" },
+			{ command: "bible", description: "Get a random Bible verse" },
+			{ command: "dictionary", description: "Look up a word in the dictionary" },
 		],
 	})
-	.then(() => {
-		console.log("Bot commands registered successfully");
-	})
+	.then(() => {})
 	.catch((err) => {
 		console.error("Failed to register bot commands:", err);
 	});
@@ -228,7 +234,7 @@ async function handleTweetPreview(msg, text, chatId) {
 				const singleMedia = media[0];
 				const optionsWithCaption = { ...messageOptions, caption: tweetText };
 
-				if (singleMedia.type === "VIDEO") {
+				if (singleMedia.type === "VIDEO" || singleMedia.type == "GIF") {
 					await bot.sendVideo(chatId, singleMedia.url, optionsWithCaption);
 				} else {
 					await bot.sendPhoto(chatId, singleMedia.url, optionsWithCaption);
@@ -242,7 +248,7 @@ async function handleTweetPreview(msg, text, chatId) {
 				await bot.sendMediaGroup(chatId, mediaGroup);
 			} else {
 				for (const item of media) {
-					if (item.type === "VIDEO") {
+					if (item.type === "VIDEO" || item.type == "GIF") {
 						await bot.sendVideo(chatId, item.url);
 					} else if (item.type === "PHOTO") {
 						await bot.sendPhoto(chatId, item.url);
@@ -375,6 +381,26 @@ bot.on("text", async (msg) => {
 		const image = await screenshotRedditPost(redditLink);
 		bot.sendPhoto(msg.chat.id, image);
 	} */
+	const antCollection = db.collection("ants");
+
+	const melbourneNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Australia/Melbourne" }));
+
+	const hour = melbourneNow.getHours();
+	const isBetweenMidnightAndThreeAMInAus = hour >= 0 && hour < 3;
+
+	const todayMelbourne = melbourneNow.toISOString().slice(0, 10);
+	const antIDs = process.env.ANT_ID?.split(" ").map(Number) ?? [];
+
+	if (antIDs.includes(msg.from.id) && isBetweenMidnightAndThreeAMInAus) {
+		const ant = await antCollection.findOne({ userId: msg.from.id });
+
+		if (ant?.lastSentDate !== todayMelbourne) {
+			await bot.sendMessage(msg.chat.id, sleepQuotes.random());
+
+			await antCollection.updateOne({ userId: msg.from.id }, { $set: { lastSentDate: todayMelbourne } }, { upsert: true });
+		}
+	}
+
 	await handleSocialMediaLinks(text, chatId, msg.message_id, msg);
 
 	await handleTweetPreview(msg, text, chatId);
@@ -534,7 +560,7 @@ Here are the commands you can use:
 				case "/currencyConvert":
 					const input = msg.text.split(" ").slice(1);
 					if (input.length > 4) return;
-					const amount = Number(input[0]);
+					const amount = Number(input[0].replace(/,/g, ""));
 					const currencyFrom = input[1];
 					if (!currencyFrom) {
 						handleResponse("Missing input currency. Example command : /cc 25000 XOF to USD.", msg, chatId, myCache, bot, null).catch((err) => {
@@ -647,28 +673,7 @@ Here are the commands you can use:
 				case "/processPoll":
 					bot.sendMessage(msg.chat.id, `I am connected to: ${bot.options.baseApiUrl}`);
 					break;
-				case "/etymology":
-					let msgQuery = text.split(" ").slice(1).join(" ");
-					let lang = msgQuery.split(" ")[0];
-					if (lang.startsWith(":")) {
-						msgQuery = text.split(" ").slice(2).join(" ");
-						lang = lang.slice(1);
-					} else {
-						lang = null;
-					}
-					const etymologyQuery = (msgQuery.trim().length ? msgQuery : msg.quote?.text || msg.reply_to_message?.text || msg.reply_to_message?.caption) || "";
 
-					getWordEtymology(etymologyQuery, lang)
-						.then((response) => {
-							if (response.length)
-								handleResponse(response.replace(ansiEscapeRegex, ""), msg, chatId, myCache, bot, "pre").catch((err) => {
-									console.error(err);
-								});
-						})
-						.catch((err) => {
-							console.error(err);
-						});
-					break;
 				case "/invite":
 					const invite = text.split(" ").slice(1).join(" ");
 					sendPoll(db, msg.chat.id, `Invite ${invite} to the chat?`, [{ text: "Yes" }, { text: "No" }], false);
@@ -730,7 +735,6 @@ Here are the commands you can use:
 					}
 
 					if (msg.reply_to_message?.sticker) {
-						console.log(msg.reply_to_message?.sticker, msg.chat.id.toString().slice(4));
 						if (!msg.reply_to_message?.sticker?.set_name.includes(chatId.toString().slice(4)) && msg.chat.type != "private") {
 							await bot.sendMessage(msg.chat.id, "no, wtf");
 							return;
@@ -758,16 +762,12 @@ Here are the commands you can use:
 				case "/createsticker":
 				case "/addsticker":
 					if (msg.reply_to_message && (msg.reply_to_message.photo || msg.reply_to_message.sticker || msg.reply_to_message.document)) {
-						const emojis = msg.text.split(" ").slice(1).join(" ").replace(/\s+/g, "");
-						if (!isEmojiString(emojis) && emojis.trim().length == 0) {
-							handleResponse("Correct usage: /addsticker <emojis>. Example : /addsticker 💧🍉.", msg, chatId, myCache, bot, null).catch((err) => {
-								console.error(err);
-							});
-							break;
+						let emojis = msg.text.split(" ").slice(1).join(" ").replace(/\s+/g, "");
+						if (emojis.trim().length === 0) {
+							emojis = "🍉";
 						}
 						const photoArray = msg.reply_to_message.photo;
 						const highestQualityPhoto = photoArray ? photoArray[photoArray.length - 1] : msg.reply_to_message.sticker || msg.reply_to_message.document;
-						console.log(highestQualityPhoto);
 						bot.getFile(highestQualityPhoto.file_id).then(async (file) => {
 							const arrayBuffer = fs.readFileSync(file.file_path);
 							const imageBuffer = Buffer.from(arrayBuffer);
@@ -968,7 +968,7 @@ Here are the commands you can use:
 						handleResponse("No URL found. Reply to a message with a URL or use /archive <url>", msg, chatId, myCache, bot, null);
 					}
 					break;
-				case "/tarot1":
+				/* 				case "/tarot1":
 				case "/tarot3":
 				case "/tarot10":
 					const cardsToDraw = Number(msg.text.split("tarot")[1]) || 3;
@@ -981,7 +981,7 @@ Here are the commands you can use:
 					);
 					fs.unlinkSync(slideshowPath);
 
-					break;
+					break; */
 				case "/musicstats":
 					const stats = await getMusicStats(musicCollection, msg.chat.id);
 					await bot.sendMessage(msg.chat.id, `<blockquote expandable>${stats}</blockquote>`, {
@@ -1026,11 +1026,129 @@ Here are the commands you can use:
 						console.error(e);
 					});
 					break;
-				case "/dict":
-					let searchQuery = text.split(" ").slice(1).join(" ");
-					console.log(searchQuery);
-					const pages = await getWiktionaryPages(searchQuery);
-					bot.sendPhoto(chatId, pages);
+				case "/bible":
+					const bibleDB = client.db("bible");
+					const verse = await bibleDB
+						.collection("verses")
+						.aggregate([{ $match: { translation: "KJV" } }, { $sample: { size: 1 } }])
+						.toArray();
+
+					const v = verse[0];
+
+					const verseText = `${v.book} ${v.chapter}:${v.verse}\n${v.text}`;
+					handleResponse(`<blockquote expandable>${verseText} </blockquote>`, msg, chatId, myCache, bot, null).catch((e) => {
+						console.error(e);
+					});
+					break;
+				case "/tarot1":
+				case "/tarot3":
+				case "/tarot10":
+					if (msg.chat.type !== "private") return;
+					const cardsToDraw = Number(msg.text.split("tarot")[1]) || 3;
+					const userQuestion = msg.text.split(" ").splice(1).join(" ");
+					const { slideshowPath, reading, imagePaths } = await getReading(cardsToDraw);
+					const fileOptions = {
+						filename: "video.mp4",
+						contentType: "video/mp4",
+					};
+
+					const lastReading = await getLastTarotReading(msg.from.id, msg.chat.id);
+					const lastReadingContext = lastReading
+						? `\n\nFor context, their last reading was on ${lastReading.date.toDateString()} with the cards: ${lastReading.cards.join(", ")}. ${lastReading.question ? `They asked: "${lastReading.question}".` : ""} The interpretation was: "${lastReading.interpretation}"`
+						: "";
+
+					const llmRequest = `
+				Generate a tarot reading for ${[msg.from.first_name, msg.from.last_name].join(" ").trim()} (@${msg.from.username}) based on these cards: ${reading.join(",")}.
+				${userQuestion.trim().length > 0 ? `The reading should address this specific question: "${userQuestion}"` : ""}${lastReadingContext}
+
+				Format the response as a conversation between Dasha Nekrasova and Anna Khachiyan from the Red Scare podcast. Include their typical banter, cultural references, and sardonic tone. They should directly address ${msg.from.username ? `@${msg.from.username}` : "the querent"} during the reading.
+
+				If there's a natural opportunity for a clever wordplay or joke related to the querent's name that fits the reading's context, include it, but don't force it.
+
+				The reading should:
+				- Interpret each card's meaning in relation to the others
+				- Maintain the nihilistic yet insightful tone of the podcast
+				- Include references to psychoanalysis, cultural theory, or art when relevant
+				- End with some form of conclusion about the querent's situation
+				- NOT say that something is very [insert thinkers name] in the tarot cards
+				- Write a message as it's gonna be parsed by the telegram HTML parse mode, so no markdown
+				You may use only the following HTML tags in your output: <b>, <strong>, <i>, <em>, <u>, <ins>, <s>, <strike>, <del>, <span class="tg-spoiler">, <tg-spoiler>, <a>, <tg-emoji>, <code>, <pre>, and <blockquote> (including the expandable attribute).
+				${lastReading ? "- Reference or acknowledge the previous reading if relevant to the current cards" : ""}
+				`;
+					const tarotMessage = await bot.sendMessage(msg.chat.id, reading.join("\n") + `\n<blockquote expandable>One sec...</blockquote>`, {
+						parse_mode: "HTML",
+					});
+
+					const interpretation = sanitizeTelegramHtml(await sendSimpleRequestToDeepSeek(llmRequest));
+					await storeTarotReadingInDB(msg.from.id, msg.chat.id, reading, interpretation, userQuestion);
+					const interpretationMessageBlocks = createMessageBlocks(interpretation);
+					await bot.editMessageText(reading.join("\n") + `\n<blockquote expandable>${interpretationMessageBlocks[0]}</blockquote>`, {
+						parse_mode: "HTML",
+						message_id: tarotMessage.message_id,
+						chat_id: msg.chat.id,
+					});
+					if (interpretationMessageBlocks.length > 2) {
+						for (let i = 1; i < interpretationMessageBlocks.length; i++) {
+							await bot.sendMessage(chatId, `\n<blockquote expandable> ${interpretationMessageBlocks[i]}</blockquote>`);
+						}
+					}
+					break;
+				case "/auslan":
+					const auslanText = text.split(" ").slice(1).join(" ") || msg.reply_to_message?.text || "";
+					if (auslanText.trim().length == 0) {
+						handleResponse("usage: /auslan <word>", msg, chatId, myCache, bot, null).catch((err) => {
+							console.error(err);
+						});
+						return;
+					}
+					const mediaUrl = await findAuslanSignVideoLink(auslanText);
+					if (mediaUrl) {
+						bot.sendVideo(chatId, mediaUrl, { reply_to_message_id: msg.message_id }, { filename: "auslan.mp4", contentType: "video/mp4" });
+					}
+					break;
+				case "/latex":
+					const latexInput = text.split(" ").slice(1).join(" ") || msg.reply_to_message?.text || "";
+					if (latexInput.trim().length == 0) {
+						handleResponse("usage: /latex <latex code>", msg, chatId, myCache, bot, null).catch((err) => {
+							console.error(err);
+						});
+						return;
+					}
+					const buffer = await renderLatexToPngBuffer(latexInput);
+					bot.sendPhoto(chatId, buffer, { reply_to_message_id: msg.message_id }, { filename: "latex.png", contentType: "image/png" });
+					break;
+				case "/etymology":
+				case "/dictionary":
+					let searchQuery = text.split(" ").slice(1).join(" ").split("|")[0].trim().toLowerCase();
+					let languageQuery = text.split("|").slice(1).join(" ").trim();
+					if (languageQuery.length == 0) {
+						languageQuery = null;
+					}
+					const { word, audioUrls, langCode } = await lookupWord(dictionaryCollection, searchQuery, languageQuery);
+					if (!word) {
+						handleResponse(`Word not found (language ${langCode})`, msg, chatId, myCache, bot, null).catch((err) => {
+							console.error(err);
+						});
+						break;
+					}
+					/* if (audioUrls && audioUrls.length > 0) {
+						bot
+							.sendMediaGroup(
+								chatId,
+								audioUrls.map((url) => ({ type: "audio", media: url })),
+								{ reply_to_message_id: msg.message_id },
+							)
+							.catch((err) => {
+								console.error(err);
+							});
+					} */
+					if (audioUrls && audioUrls.length > 0) {
+						await bot.sendVoice(chatId, audioUrls[0], { reply_to_message_id: msg.message_id });
+					}
+					const messageBlocks = createMessageBlocks(word, 4000);
+					for (const block of messageBlocks) {
+						await bot.sendMessage(chatId, `<blockquote expandable>${block}</blockquote>`, { parse_mode: "HTML", reply_to_message_id: msg.message_id });
+					}
 					break;
 			}
 		}

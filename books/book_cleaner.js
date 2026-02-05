@@ -63,7 +63,6 @@ function extractXMLBookContent(filePath, bookName) {
 			const books = result["TEI.2"]["text"][0]["body"][0]["div1"];
 			for (let book of books) {
 				const bookDocument = { book: bookName, number: Number(book["$"]["n"]), content: book["p"][0]["_"] };
-				console.log(book["p"][0]["milestone"]);
 				await collection.insertOne(bookDocument);
 			}
 			process.exit(0);
