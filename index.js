@@ -9,6 +9,7 @@ var weather = require("weather-js");
 const { error } = require("console");
 const { removeImageBackground, generateUnsplashImage, doOCR, generateWordCloud, resizeImageBuffer, isEmojiString } = require("./utils/image");
 const { sendSimpleRequestToClaude, sendRequestWithImageToClaude, guessMediaType, sendSimpleRequestToDeepSeek } = require("./utils/ai");
+const { summarizeUrl } = require("./utils/summarize");
 const fs = require("fs");
 const math = require("mathjs");
 const { getWordEtymology, lookupWord } = require("./utils/dictionary");
@@ -124,6 +125,7 @@ axios
 			},
 			{ command: "oracle", description: "Get oracle reading with audio" },
 			{ command: "archive", description: "Get archive.org link for URL" },
+			{ command: "summarize", description: "Summarize article from URL" },
 			{ command: "musicstats", description: "View music statistics" },
 			{
 				command: "findalbum",
@@ -393,7 +395,7 @@ bot.on("audio", async (msg) => {
 		await storeMusicInDB(msg.audio, msg);
 	}
 });
-bot.on("photo", async (msg) => {
+/* bot.on("photo", async (msg) => {
 	const photoMedia = msg.photo.pop();
 
 	if (photoMedia) {
@@ -408,7 +410,7 @@ bot.on("photo", async (msg) => {
 			}
 		});
 	}
-});
+}); */
 bot.on("text", async (msg) => {
 	const chatId = msg.chat.id;
 	const text = msg.text || msg.caption;
@@ -527,6 +529,7 @@ Here are the commands you can use:
 
 <b>Analysis:</b>
 /archive - Get archive.org link for URL
+/summarize - Summarize article from URL
 
 <b>Tarot Readings:</b>
 /tarot1 - Single card reading
@@ -1070,6 +1073,33 @@ Here are the commands you can use:
 							});
 					} else {
 						handleResponse("No URL found. Reply to a message with a URL or use /archive <url>", msg, chatId, myCache, bot, null);
+					}
+					break;
+
+				case "/summarize":
+					const fullContext = [msg?.reply_to_message?.text?.toString(), msg.text?.toString()].filter((element) => element).join("");
+					const summaryUrl = extractUrl(fullContext);
+					console.log(summaryUrl);
+					if (summaryUrl) {
+						summarizeUrl(summaryUrl)
+							.then((summary) => {
+								handleResponse(
+									`Not an LLM summary, lower your expectations <blockquote expandable>${summary}</blockquote>`,
+									msg,
+									chatId,
+									myCache,
+									bot,
+									null,
+								).catch((err) => {
+									console.error(err);
+								});
+							})
+							.catch((err) => {
+								console.log(summarizeUrl);
+								handleResponse("failed to summarize URL, probably ran out of memory lel, get me a bigger server ty.", msg, chatId, myCache, bot, null);
+							});
+					} else {
+						handleResponse("No URL found. Reply to a message with a URL or use /summarize <url>", msg, chatId, myCache, bot, null);
 					}
 					break;
 				/* 				case "/tarot1":
