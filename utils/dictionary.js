@@ -1,14 +1,12 @@
 const axios = require("axios");
 const { lang } = require("moment");
 const { MeiliSearch } = require("meilisearch");
-onst client = new MeiliSearch({
-  host: "http://127.0.0.1:7700",
-  apiKey: process.env.MEILI_MASTER_KEY,
+const client = new MeiliSearch({
+	host: "http://127.0.0.1:7700",
+	apiKey: process.env.MEILI_MASTER_KEY,
 });
 
 const INDEX_NAME = "dictionary";
-
-
 
 function detectLangCode(word) {
 	const w = word.trim();
@@ -30,7 +28,6 @@ function detectLangCode(word) {
 	if (turkishRegex.test(w)) {
 		return "tr";
 	}
-;
 	return "en";
 }
 
@@ -101,4 +98,4 @@ function formatWordEntry(entry, langCode) {
 
 	return { word: lines.join("\n"), audioUrls, langCode };
 }
-module.exports = {lookupWord };
+module.exports = { lookupWord };

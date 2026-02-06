@@ -65,7 +65,6 @@ const { getAndSendRandomQuestion } = require("./utils/trivia");
 const { sendRandomQuizz } = require("./utils/quizz");
 const { getPollResults } = require("./utils/telegram_polls");
 const { getReading } = require("./utils/tarot");
-const { MaxPool3DGrad } = require("@tensorflow/tfjs");
 const { extractAndEchoSocialLink, downloadImageAsBuffer, getAlbumFromSong, downloadVideoFromUrl } = require("./utils/downloader");
 const { findDirectArchiveLink } = require("./utils/web");
 const { textToSpeech, createConversationAudio } = require("./utils/tts");
@@ -78,6 +77,7 @@ const { getWeather, getForecastDay, extractDayOffset, extractLocation } = requir
 const { getUserMessagesAndAnalyse } = require("./utils/political");
 const { getLocalNews } = require("./utils/news");
 const { withBurnedSubtitles } = require("./utils/transcriber");
+const { cutVideo } = require("./utils/cutter");
 const { getTimeAtLocation, findTimezones } = require("./utils/time");
 const { getRandomQuranVerse } = require("./utils/quran");
 const { screenshotRedditPost, extractOldRedditLink } = require("./utils/reddit");
@@ -85,41 +85,85 @@ const { getWiktionaryPages } = require("./utils/wikitionary");
 const { sanitizeTelegramHtml } = require("./utils/html-sanitizer");
 const { findAuslanSignVideoLink } = require("./utils/auslan");
 const { renderLatexToPngBuffer } = require("./utils/latex");
+const { analyzeSentiment, analyzePhoto } = require("./utils/toxicity");
 
 axios
 	.post(`${process.env.LOCAL_TELEGRAM_API_URL || "http://localhost:8081"}/bot${process.env.TELEGRAM_BOT_TOKEN}/setMyCommands`, {
 		commands: [
-			{ command: "help", description: "Display help message with all commands" },
+			{
+				command: "help",
+				description: "Display help message with all commands",
+			},
 			{ command: "weather", description: "Get the weather" },
 			{ command: "forecast", description: "Get forecast" },
 			{ command: "8ball", description: "Get a Magic 8-Ball response" },
 			{ command: "coinflip", description: "Flip a coin" },
 			{ command: "calc", description: "Calculate mathematical expressions" },
-			{ command: "when", description: "Show message date - reply to message" },
+			{
+				command: "when",
+				description: "Show message date - reply to message",
+			},
 			{ command: "weather", description: "Get weather in Celsius" },
 			{ command: "trans", description: "Translate text to another language" },
 			{ command: "etymology", description: "Get word etymology" },
-			{ command: "unsplash", description: "Generate quote image - reply to message" },
-			{ command: "ocr", description: "Extract text from image - reply to image" },
-			{ command: "wordcloud", description: "Generate word cloud from recent messages" },
-			{ command: "createsticker", description: "Create sticker from image with emojis" },
+			{
+				command: "unsplash",
+				description: "Generate quote image - reply to message",
+			},
+			{
+				command: "ocr",
+				description: "Extract text from image - reply to image",
+			},
+			{
+				command: "wordcloud",
+				description: "Generate word cloud from recent messages",
+			},
+			{
+				command: "createsticker",
+				description: "Create sticker from image with emojis",
+			},
 			{ command: "oracle", description: "Get oracle reading with audio" },
 			{ command: "archive", description: "Get archive.org link for URL" },
 			{ command: "musicstats", description: "View music statistics" },
-			{ command: "findalbum", description: "Find album for audio track - reply to audio" },
+			{
+				command: "findalbum",
+				description: "Find album for audio track - reply to audio",
+			},
 			{ command: "regex", description: "Search messages by regex pattern" },
-			{ command: "search", description: "Semantic search for messages by meaning" },
+			{
+				command: "search",
+				description: "Semantic search for messages by meaning",
+			},
 			{ command: "count", description: "Count message occurrences" },
 			{ command: "glossary", description: "Search glossary" },
-			{ command: "addtoglossary", description: "Add word to glossary with definition" },
-			{ command: "downloadaudio", description: "Reply to a message with a URL to download audio or do /downloadaudio <url>" },
-			{ command: "download", description: "Reply to a message with a URL to download a video or do /download <url>" },
+			{
+				command: "addtoglossary",
+				description: "Add word to glossary with definition",
+			},
+			{
+				command: "downloadaudio",
+				description: "Reply to a message with a URL to download audio or do /downloadaudio <url>",
+			},
+			{
+				command: "download",
+				description: "Reply to a message with a URL to download a video or do /download <url>",
+			},
 			{ command: "cc", description: "Convert currency" },
 			{ command: "addsubtitles", description: "add subtitles to a video" },
-			{ command: "summary", description: "Summarize last N messages (default: 100)" },
+			{
+				command: "cut",
+				description: "Cut video from start to end time (reply to video)",
+			},
+			{
+				command: "summary",
+				description: "Summarize last N messages (default: 100)",
+			},
 			{ command: "quran", description: "Get a random Quran verse" },
 			{ command: "bible", description: "Get a random Bible verse" },
-			{ command: "dictionary", description: "Look up a word in the dictionary" },
+			{
+				command: "dictionary",
+				description: "Look up a word in the dictionary",
+			},
 		],
 	})
 	.then(() => {})
@@ -349,7 +393,22 @@ bot.on("audio", async (msg) => {
 		await storeMusicInDB(msg.audio, msg);
 	}
 });
+bot.on("photo", async (msg) => {
+	const photoMedia = msg.photo.pop();
 
+	if (photoMedia) {
+		bot.getFile(photoMedia.file_id).then((file) => {
+			const fileSizeInBytes = file.file_size;
+			const fileSizeInMB = fileSizeInBytes / (1024 * 1024);
+			console.log(fileSizeInMB, "MB");
+			if (fileSizeInMB < 20) {
+				analyzePhoto(file.file_path).then((analysis) => {
+					console.log(analysis);
+				});
+			}
+		});
+	}
+});
 bot.on("text", async (msg) => {
 	const chatId = msg.chat.id;
 	const text = msg.text || msg.caption;
@@ -357,6 +416,7 @@ bot.on("text", async (msg) => {
 	if (msg.chat.type === "private" && !isUserAllowedToDM(msg.from.id)) {
 		return;
 	}
+
 	/* const probability = Math.random();
 	const triggerPattern = process.env.TRIGGER_TERMS || "";
 	const regex = new RegExp(`\\b(${triggerPattern})\\b`, "gi");
@@ -399,6 +459,20 @@ bot.on("text", async (msg) => {
 
 			await antCollection.updateOne({ userId: msg.from.id }, { $set: { lastSentDate: todayMelbourne } }, { upsert: true });
 		}
+	}
+	if (text.trim().length > 0) {
+		analyzeSentiment(text).then((analysis) => {
+			const result = analysis[0];
+			if (result.score > 0.82) {
+				if (result.label == "5 stars") {
+					console.log(result.score, result.label, text);
+					reactToTelegramMessage(process.env.TELEGRAM_BOT_TOKEN, "😍", msg.chat.id, msg.message_id);
+				} else if (result.label == "1 star") {
+					console.log(result.score, result.label, text);
+					reactToTelegramMessage(process.env.TELEGRAM_BOT_TOKEN, "😢", msg.chat.id, msg.message_id);
+				}
+			}
+		});
 	}
 
 	await handleSocialMediaLinks(text, chatId, msg.message_id, msg);
@@ -449,6 +523,7 @@ Here are the commands you can use:
 /unsplash - Generate quote image (reply to message)
 /wordcloud - Generate word cloud from recent messages
 /createsticker [emojis] - Create sticker from image (also /addsticker)
+/cut <start> <end> - Cut video (reply to video)
 
 <b>Analysis:</b>
 /archive - Get archive.org link for URL
@@ -534,7 +609,10 @@ Here are the commands you can use:
 											{
 												reply_to_message_id: messageId,
 											},
-											{ filename: new Date() + "video.mp4", contentType: "video/mp4" },
+											{
+												filename: new Date() + "video.mp4",
+												contentType: "video/mp4",
+											},
 										);
 									} else {
 										const sentAudio = await bot.sendAudio(chatId, data, {
@@ -758,6 +836,32 @@ Here are the commands you can use:
 						);
 					}
 					break;
+
+				case "/cut": {
+					const args = text.split(" ").slice(1);
+					if (args.length < 2) {
+						handleResponse(
+							"Usage: /cut <start> <end> (reply to a video). Times can be seconds (e.g., 5) or HH:MM:SS (e.g., 00:01:30).",
+							msg,
+							chatId,
+							myCache,
+							bot,
+							null,
+						).catch((err) => {
+							console.error(err);
+						});
+						break;
+					}
+					const [start, end] = args;
+					if (msg.reply_to_message && (msg.reply_to_message.video || msg.reply_to_message.document)) {
+						const file = await bot.getFile(msg.reply_to_message.video ? msg.reply_to_message.video.file_id : msg.reply_to_message.document.file_id);
+						cutVideo(file.file_path, start, end, async ({ outputVideoPath }) => {
+							await bot.sendVideo(chatId, outputVideoPath, { reply_to_message_id: msg.message_id }, { filename: "cut.mp4", contentType: "video/mp4" });
+							return;
+						});
+					}
+					break;
+				}
 
 				case "/createsticker":
 				case "/addsticker":
@@ -1143,7 +1247,9 @@ Here are the commands you can use:
 							});
 					} */
 					if (audioUrls && audioUrls.length > 0) {
-						await bot.sendVoice(chatId, audioUrls[0], { reply_to_message_id: msg.message_id });
+						await bot.sendVoice(chatId, audioUrls[0], {
+							reply_to_message_id: msg.message_id,
+						});
 					}
 					const messageBlocks = createMessageBlocks(word, 4000);
 					for (const block of messageBlocks) {
@@ -1229,3 +1335,5 @@ function translateShell(string, languagePart) {
 		//}
 	});
 }
+/* 
+classifyToxicity("fuck off now"); */
