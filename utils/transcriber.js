@@ -10,7 +10,7 @@ const execAsync = promisify(exec);
 async function withBurnedSubtitles(
 	inputVideoPath,
 	callback,
-	{ language = "en", modelPath = os.homedir() + "/whisper.cpp/models/ggml-base.bin", whisperBin = os.homedir() + "/whisper.cpp/build/bin/whisper-cli" } = {},
+	{ language = "en", modelPath = `${os.homedir()}/whisper.cpp/models/ggml-base.bin`, whisperBin = `${os.homedir()}/whisper.cpp/build/bin/whisper-cli` } = {},
 ) {
 	if (!fsSync.existsSync(inputVideoPath)) {
 		throw new Error("Input video does not exist");
@@ -24,7 +24,8 @@ async function withBurnedSubtitles(
 
 	await fs.mkdir(tempDir, { recursive: true });
 	const audioDestinationFile = path.join(tempDir, "audio.wav");
-	const commandConvertToAudio = `ffmpeg -y -i "${inputVideoPath}" -vn -acodec pcm_s16le -ar 16000 -ac 1 "${audioDestinationFile}"`;
+	const ffmpegLocation = path.join(__dirname, "..", "deps", "ffmpeg", "bin", "ffmpeg");
+	const commandConvertToAudio = `${ffmpegLocation} -y -i "${inputVideoPath}" -vn -acodec pcm_s16le -ar 16000 -ac 1 "${audioDestinationFile}"`;
 	await execAsync(commandConvertToAudio);
 
 	try {
@@ -39,17 +40,20 @@ async function withBurnedSubtitles(
 		if (!fsSync.existsSync(subtitlePath)) {
 			throw new Error("no srt generated");
 		}
+		const ffmpegCommand = [
+			ffmpegLocation,
+			"-y",
+			`-i "${inputVideoPath}"`,
+			`-vf "subtitles=${subtitlePath}:force_style='FontSize=16,Outline=2'"`,
+			"-c:v libx264",
+			"-crf 23",
+			"-preset fast",
+			"-c:a copy",
+			`"${outputVideoPath}"`,
+		].join(" ");
 
-		await execAsync(
-			[
-				"ffmpeg",
-				"-y",
-				`-i "${inputVideoPath}"`,
-				`-vf "subtitles='${subtitlePath}':force_style='FontSize=16,Outline=2'"`,
-				"-c:a copy",
-				`"${outputVideoPath}"`,
-			].join(" "),
-		);
+		console.log(ffmpegCommand);
+		await execAsync(ffmpegCommand);
 
 		await callback({
 			tempDir,
@@ -61,6 +65,48 @@ async function withBurnedSubtitles(
 	}
 }
 
+async function transcribeAudio(
+	inputAudioPath,
+	{ language = "en", modelPath = `${os.homedir()}/whisper.cpp/models/ggml-base.bin`, whisperBin = `${os.homedir()}/whisper.cpp/build/bin/whisper-cli` } = {},
+) {
+	if (!fsSync.existsSync(inputAudioPath)) {
+		throw new Error("Input audio does not exist");
+	}
+
+	const tmpId = crypto.randomUUID();
+	const tempDir = path.join("/tmp", `transcribe-${tmpId}`);
+	await fs.mkdir(tempDir, { recursive: true });
+
+	const audioDestinationFile = path.join(tempDir, "audio.wav");
+	const outputTextFile = path.join(tempDir, "audio.txt");
+
+	try {
+		// Convert to WAV 16kHz mono for whisper
+		const commandConvertToAudio = `ffmpeg -y -i "${inputAudioPath}" -vn -acodec pcm_s16le -ar 16000 -ac 1 "${audioDestinationFile}"`;
+		await execAsync(commandConvertToAudio);
+
+		// Run whisper.cpp
+		const output = await execAsync(
+			[whisperBin, `-m "${modelPath}"`, `-l ${language}`, "-otxt", "--threads 2", `-of "${path.join(tempDir, "audio")}"`, `"${audioDestinationFile}"`].join(
+				" ",
+			),
+			{
+				maxBuffer: 1024 * 1024 * 10,
+			},
+		);
+
+		if (!fsSync.existsSync(outputTextFile)) {
+			throw new Error("No transcription generated");
+		}
+
+		const transcription = await fs.readFile(outputTextFile, "utf-8");
+		return transcription.trim();
+	} finally {
+		await fs.rm(tempDir, { recursive: true, force: true });
+	}
+}
+
 module.exports = {
 	withBurnedSubtitles,
+	transcribeAudio,
 };

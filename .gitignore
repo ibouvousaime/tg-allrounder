@@ -144,3 +144,4 @@ data/*
 *.wav
 content.html
 audio/*
+deps/*

@@ -11,6 +11,8 @@ const { removeImageBackground, generateUnsplashImage, doOCR, generateWordCloud, 
 const { sendSimpleRequestToClaude, sendRequestWithImageToClaude, guessMediaType, sendSimpleRequestToDeepSeek } = require("./utils/ai");
 const { summarizeUrl } = require("./utils/summarize");
 const fs = require("fs");
+const os = require("node:os");
+const path = require("node:path");
 const math = require("mathjs");
 const { getWordEtymology, lookupWord } = require("./utils/dictionary");
 const { sleepQuotes } = require("./utils/sleepQuotes");
@@ -77,7 +79,7 @@ const axios = require("axios");
 const { getWeather, getForecastDay, extractDayOffset, extractLocation } = require("./utils/weather");
 const { getUserMessagesAndAnalyse } = require("./utils/political");
 const { getLocalNews } = require("./utils/news");
-const { withBurnedSubtitles } = require("./utils/transcriber");
+const { withBurnedSubtitles, transcribeAudio } = require("./utils/transcriber");
 const { cutVideo } = require("./utils/cutter");
 const { getTimeAtLocation, findTimezones } = require("./utils/time");
 const { getRandomQuranVerse } = require("./utils/quran");
@@ -165,6 +167,10 @@ axios
 			{
 				command: "dictionary",
 				description: "Look up a word in the dictionary",
+			},
+			{
+				command: "transcribe",
+				description: "Transcribe audio or voice message (reply to audio)",
 			},
 		],
 	})
@@ -395,6 +401,62 @@ bot.on("audio", async (msg) => {
 		await storeMusicInDB(msg.audio, msg);
 	}
 });
+
+/* bot.on("voice", async (msg) => {
+  try {
+    const chatId = msg.chat.id;
+    const voice = msg.voice;
+    if (!voice) return;
+
+    console.log(
+      `Voice message received from ${msg.from.id} in ${chatId}, duration: ${voice.duration}s`,
+    );
+
+    if (voice.duration > 300) {
+      console.log(
+        `Long voice message (${voice.duration}s), transcription may take time.`,
+      );
+    }
+
+    // Get file info - file_path is already local path
+    const file = await bot.getFile(voice.file_id);
+    const localFilePath = file.file_path;
+
+    if (!require("fs").existsSync(localFilePath)) {
+      throw new Error(`File not found at ${localFilePath}`);
+    }
+
+    console.log(`Voice file located at ${localFilePath}`);
+
+    // Send processing message
+    const processingMsg = await bot.sendMessage(chatId, "🎤 Transcribing...", {
+      reply_to_message_id: msg.message_id,
+    });
+
+    // Transcribe
+    const transcription = await transcribeAudio(localFilePath);
+
+    // Edit processing message with transcription
+    await bot.editMessageText(`🎤 Transcription:\n${transcription}`, {
+      chat_id: chatId,
+      message_id: processingMsg.message_id,
+    });
+  } catch (error) {
+    console.error("Voice transcription failed:", error);
+    // Optionally send error message to user
+    try {
+      await bot.sendMessage(
+        msg.chat.id,
+        "❌ Failed to transcribe voice message. " + error.message,
+        {
+          reply_to_message_id: msg.message_id,
+        },
+      );
+    } catch (sendError) {
+      console.error("Failed to send error message:", sendError);
+    }
+  }
+}); */
 /* bot.on("photo", async (msg) => {
 	const photoMedia = msg.photo.pop();
 
@@ -465,7 +527,7 @@ bot.on("text", async (msg) => {
 	if (text.trim().length > 0) {
 		analyzeSentiment(text).then((analysis) => {
 			const result = analysis[0];
-			if (result.score > 0.82) {
+			if (result.score > 0.88) {
 				if (result.label == "5 stars") {
 					console.log(result.score, result.label, text);
 					reactToTelegramMessage(process.env.TELEGRAM_BOT_TOKEN, "😍", msg.chat.id, msg.message_id);
@@ -562,18 +624,26 @@ Here are the commands you can use:
 						console.error(err);
 					});
 					break;
-				case "/interview":
-				case "/8ball":
-					const response = getRandomElement(eightBallResponses);
-					handleResponse(response, msg, chatId, myCache, bot, null).catch((err) => {
-						console.error(err);
-					});
-					break;
-				case "/wordcloud":
-					const currentDate = new Date();
-					const oneWeekAgo = new Date(currentDate);
-					oneWeekAgo.setDate(currentDate.getDate() - 2);
 
+				case "/transcribe":
+					if (msg.reply_to_message && (msg.reply_to_message.audio || msg.reply_to_message.voice)) {
+						const file = await bot.getFile(msg.reply_to_message.voice ? msg.reply_to_message.voice.file_id : msg.reply_to_message.audio.file_id);
+						try {
+							const transcription = await transcribeAudio(file.file_path);
+							await bot.sendMessage(chatId, `<blockquote expandable>\n${transcription}</blockquote>`, {
+								reply_to_message_id: msg.message_id,
+								parse_mode: "HTML",
+							});
+						} catch (error) {
+							console.error("Transcription failed:", error);
+							await bot.sendMessage(chatId, `failed: ${error.message}`, { reply_to_message_id: msg.message_id });
+						}
+					} else {
+						await bot.sendMessage(chatId, "Please reply to an audio or voice message to transcribe.", { reply_to_message_id: msg.message_id });
+					}
+					break;
+
+				case "/wordcloud":
 					collection
 						.find({ chatId })
 						.sort({ date: -1 })
