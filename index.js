@@ -88,7 +88,7 @@ const { getWiktionaryPages } = require("./utils/wikitionary");
 const { sanitizeTelegramHtml } = require("./utils/html-sanitizer");
 const { findAuslanSignVideoLink } = require("./utils/auslan");
 const { renderLatexToPngBuffer } = require("./utils/latex");
-const { analyzeSentiment, analyzePhoto } = require("./utils/toxicity");
+const { analyzeSentiment, analyzePhoto, emotionToEmoji, allowedReactionEmojis } = require("./utils/transformers");
 
 axios
 	.post(`${process.env.LOCAL_TELEGRAM_API_URL || "http://localhost:8081"}/bot${process.env.TELEGRAM_BOT_TOKEN}/setMyCommands`, {
@@ -526,16 +526,72 @@ bot.on("text", async (msg) => {
 	}
 	if (text.trim().length > 0) {
 		analyzeSentiment(text).then((analysis) => {
+			const canReact = (chatId, cooldown = 60 * 60_000) => {
+				const key = `reactionCooldown:${chatId}`;
+				if (myCache.get(key)) return false;
+
+				myCache.set(key, true, cooldown / 1000);
+				return true;
+			};
+
 			const result = analysis[0];
-			if (result.score > 0.88) {
-				if (result.label == "5 stars") {
-					console.log(result.score, result.label, text);
-					reactToTelegramMessage(process.env.TELEGRAM_BOT_TOKEN, "😍", msg.chat.id, msg.message_id);
-				} else if (result.label == "1 star") {
-					console.log(result.score, result.label, text);
-					reactToTelegramMessage(process.env.TELEGRAM_BOT_TOKEN, "😢", msg.chat.id, msg.message_id);
-				}
+			if (msg.chat.title.includes("testing")) result.score = 1;
+			if (result.label == "neutral") return;
+			if (result.score < 0.9) return;
+			const later = (fn, min = 5000, max = 10000) =>
+				setTimeout(
+					() => {
+						fn();
+						console.log("reacted later");
+					},
+					min + Math.random() * (max - min),
+				);
+
+			const chaos = Math.abs(Math.sin(Date.now() % 10000)) * Math.random();
+			const maybe = (p) => Math.random() < p;
+
+			const mood = Math.floor(Date.now() / 60000) % 3;
+			const moodChance = mood === 0 ? 0.05 : mood === 1 ? 0.1 : 0.08;
+
+			if (!maybe(moodChance)) {
+				console.log("Reaction refused", {
+					chat: msg.chat.title,
+					acceptanceChance: moodChance,
+					score: result.score,
+					emotion: result.label,
+					text,
+				});
+				return;
 			}
+			console.log({ chaos, moodChance });
+
+			const react = () => {
+				const emoji = emotionToEmoji(result.label);
+				if (!emoji.length) return;
+				if (!canReact(chatId)) {
+					console.log("cooldown active for chat");
+					return;
+				}
+				reactToTelegramMessage(process.env.TELEGRAM_BOT_TOKEN, emoji, chatId, msg.message_id);
+			};
+			if (maybe(0.4)) {
+				console.log("double react triggered");
+				if (!canReact(chatId)) {
+					console.log("cooldown active for chat");
+					return;
+				}
+				reactToTelegramMessage(process.env.TELEGRAM_BOT_TOKEN, allowedReactionEmojis.random(), chatId, msg.message_id);
+				later(react);
+				return;
+			}
+			if (maybe(0.01)) {
+				console.log("later react triggered");
+				setTimeout(react, 120000);
+				return;
+			}
+			console.log("regular react triggered");
+
+			react();
 		});
 	}
 
@@ -1375,6 +1431,8 @@ function extractUrl(text) {
 }
 function handleResponse(text, msg, chatId, myCache, bot, containerFormat, disablePreview = false) {
 	return new Promise(async (resolve, reject) => {
+		await bot.sendChatAction(chatId, "typing");
+
 		const previousResponse = myCache.get(`message-${msg.message_id}`);
 		if (previousResponse) {
 			bot
