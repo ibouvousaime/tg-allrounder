@@ -54,7 +54,7 @@ async function withBurnedSubtitles(
   await execAsync(commandConvertToAudio);
 
   try {
-    const output = await execAsync(
+    const output = await execAsync( 
       [
         whisperBin,
         `-m "${modelPath}"`,

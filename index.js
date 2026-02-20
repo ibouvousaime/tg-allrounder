@@ -1,27 +1,17 @@
-const Tgfancy = require("tgfancy");
 Array.prototype.random = function () {
-  return this[Math.floor(Math.random() * this.length)];
+	return this[Math.floor(Math.random() * this.length)];
 };
 require("dotenv").config();
+const TelegramBot = require("node-telegram-bot-api");
 const { exec } = require("child_process");
+const { promisify } = require("util");
+const execAsync = promisify(exec);
 const NodeCache = require("node-cache");
 const { saveCache, loadCache } = require("./utils/cachePersistence");
 var weather = require("weather-js");
 const { error } = require("console");
-const {
-  removeImageBackground,
-  generateUnsplashImage,
-  doOCR,
-  generateWordCloud,
-  resizeImageBuffer,
-  isEmojiString,
-} = require("./utils/image");
-const {
-  sendSimpleRequestToClaude,
-  sendRequestWithImageToClaude,
-  guessMediaType,
-  sendSimpleRequestToDeepSeek,
-} = require("./utils/ai");
+const { removeImageBackground, generateUnsplashImage, doOCR, generateWordCloud, resizeImageBuffer, isEmojiString } = require("./utils/image");
+const { sendSimpleRequestToClaude, sendRequestWithImageToClaude, guessMediaType, sendSimpleRequestToDeepSeek } = require("./utils/ai");
 const { summarizeUrl } = require("./utils/summarize");
 const fs = require("fs");
 const os = require("node:os");
@@ -29,83 +19,89 @@ const path = require("node:path");
 const math = require("mathjs");
 const { getWordEtymology, lookupWord } = require("./utils/dictionary");
 const { sleepQuotes } = require("./utils/sleepQuotes");
-const bot = new Tgfancy(process.env.TELEGRAM_BOT_TOKEN, {
-  baseApiUrl: process.env.LOCAL_TELEGRAM_API_URL || "http://localhost:8081",
-  polling: true,
+const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, {
+	baseApiUrl: process.env.LOCAL_TELEGRAM_API_URL || "http://localhost:8081",
+	polling: {
+		params: {
+			allowed_updates: ["message", "edited_message", "message_reaction"],
+		},
+	},
 });
+
+const originalProcessUpdate = bot.processUpdate.bind(bot);
+bot.processUpdate = function (update) {
+	return originalProcessUpdate(update);
+};
+const originalGetUpdates = bot.getUpdates.bind(bot);
+bot.getUpdates = function (form = {}) {
+	return originalGetUpdates(form)
+		.then((updates) => {
+			return updates;
+		})
+		.catch((err) => {
+			console.error("getUpdates error:", err.message);
+			throw err;
+		});
+};
+bot.on("polling_error", (error) => console.log("Polling error:", error));
+(async () => {
+	try {
+		const botInfo = await bot.getMe();
+		console.log("Bot connected successfully:", botInfo);
+	} catch (error) {
+		console.error("Failed to get bot info:", error.message);
+	}
+})();
 var forceAudio = false;
 
 const { MongoClient } = require("mongodb");
 const ansiEscapeRegex = /\x1B\[[0-?]*[ -/]*[@-~]/g;
 const eightBallResponses = [
-  "Yes, definitely",
-  "It is certain",
-  "Without a doubt",
-  "Yes, definitely",
-  "You may rely on it",
-  "As I see it, yes",
-  "Most likely",
-  "Outlook good",
-  "Yes",
-  "Signs point to yes",
-  "Reply hazy, try again",
-  "Ask again later",
-  "Better not tell you now",
-  "Cannot predict now",
-  "Concentrate and ask again",
-  "Don't count on it",
-  "My reply is no",
-  "My sources say no",
-  "Outlook not so good",
-  "Very doubtful",
+	"Yes, definitely",
+	"It is certain",
+	"Without a doubt",
+	"Yes, definitely",
+	"You may rely on it",
+	"As I see it, yes",
+	"Most likely",
+	"Outlook good",
+	"Yes",
+	"Signs point to yes",
+	"Reply hazy, try again",
+	"Ask again later",
+	"Better not tell you now",
+	"Cannot predict now",
+	"Concentrate and ask again",
+	"Don't count on it",
+	"My reply is no",
+	"My sources say no",
+	"Outlook not so good",
+	"Very doubtful",
 ];
 const mongoUri = process.env.MONGO_URI;
 const client = new MongoClient(mongoUri, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
+	useNewUrlParser: true,
+	useUnifiedTopology: true,
 });
 
 const db = client.db("messages");
 const collection = db.collection("messages");
 const musicCollection = db.collection("music");
 const tarotCollection = db.collection("tarot");
+const reactionsCollection = db.collection("reactions");
 const dictionaryCollection = client.db("wiktionary").collection("words");
 
 const { Convert } = require("easy-currencies");
 const { extractAndConvertToCm } = require("./utils/converter");
-const {
-  eyeWords,
-  reactToTelegramMessage,
-  bannedWords,
-  nerdwords,
-  sendPoll,
-} = require("./utils/reactions");
-const {
-  getRandomOracleMessageObj,
-  getContext,
-  explainContextClaude,
-} = require("./utils/oracle");
-const {
-  generateEmbedding,
-  findSimilarMessages,
-  countSenders,
-  searchMessagesByEmbedding,
-} = require("./utils/search");
-const {
-  extractTweetId,
-  extractTweet,
-  generateTweetScreenshot,
-} = require("./utils/bird");
+const { eyeWords, reactToTelegramMessage, bannedWords, nerdwords, sendPoll } = require("./utils/reactions");
+const { getRandomOracleMessageObj, getContext, explainContextClaude } = require("./utils/oracle");
+const { generateEmbedding, findSimilarMessages, countSenders, searchMessagesByEmbedding, wordCountLeaderboard } = require("./utils/search");
+const { extractTweetId, extractTweet, generateTweetScreenshot } = require("./utils/bird");
 const { getAndSendRandomQuestion } = require("./utils/trivia");
 const { sendRandomQuizz } = require("./utils/quizz");
 const { getPollResults } = require("./utils/telegram_polls");
 const { getReading } = require("./utils/tarot");
-const {
-  extractAndEchoSocialLink,
-  downloadImageAsBuffer,
-  getAlbumFromSong,
-  downloadVideoFromUrl,
-} = require("./utils/downloader");
+const { extractAndEchoSocialLink, downloadImageAsBuffer, getAlbumFromSong, downloadVideoFromUrl } = require("./utils/downloader");
 const { findDirectArchiveLink } = require("./utils/web");
 const { textToSpeech, createConversationAudio } = require("./utils/tts");
 const { makeid, createMessageBlocks } = require("./utils/util");
@@ -118,469 +114,452 @@ const SAVE_INTERVAL_MS = 5 * 60 * 1000;
 const saveInterval = setInterval(() => saveCache(myCache), SAVE_INTERVAL_MS);
 
 function gracefulShutdown() {
-  clearInterval(saveInterval);
-  saveCache(myCache);
-  process.exit(0);
+	clearInterval(saveInterval);
+	saveCache(myCache);
+	process.exit(0);
 }
 
 process.on("SIGTERM", gracefulShutdown);
 process.on("SIGINT", gracefulShutdown);
 
 const axios = require("axios");
-const {
-  getWeather,
-  getForecastDay,
-  extractDayOffset,
-  extractLocation,
-} = require("./utils/weather");
+const { getWeather, getForecastDay, extractDayOffset, extractLocation } = require("./utils/weather");
 const { getUserMessagesAndAnalyse } = require("./utils/political");
 const { getLocalNews } = require("./utils/news");
 const { withBurnedSubtitles, transcribeAudio } = require("./utils/transcriber");
 const { cutVideo } = require("./utils/cutter");
 const { getTimeAtLocation, findTimezones } = require("./utils/time");
 const { getRandomQuranVerse } = require("./utils/quran");
-const {
-  screenshotRedditPost,
-  extractOldRedditLink,
-} = require("./utils/reddit");
+const { screenshotRedditPost, extractOldRedditLink } = require("./utils/reddit");
 const { getWiktionaryPages } = require("./utils/wikitionary");
 const { sanitizeTelegramHtml } = require("./utils/html-sanitizer");
 const { findAuslanSignVideoLink } = require("./utils/auslan");
 const { renderLatexToPngBuffer } = require("./utils/latex");
-const {
-  analyzeSentiment,
-  analyzePhoto,
-  emotionToEmoji,
-  allowedReactionEmojis,
-} = require("./utils/transformers");
+const { analyzeSentiment, analyzePhoto, emotionToEmoji, allowedReactionEmojis } = require("./utils/transformers");
+const { handleTimeReminders } = require("./utils/reminder");
 
 axios
-  .post(
-    `${process.env.LOCAL_TELEGRAM_API_URL || "http://localhost:8081"}/bot${process.env.TELEGRAM_BOT_TOKEN}/setMyCommands`,
-    {
-      commands: [
-        {
-          command: "help",
-          description: "Display help message with all commands",
-        },
-        { command: "weather", description: "Get the weather" },
-        { command: "forecast", description: "Get forecast" },
-        { command: "8ball", description: "Get a Magic 8-Ball response" },
-        { command: "coinflip", description: "Flip a coin" },
-        { command: "calc", description: "Calculate mathematical expressions" },
-        {
-          command: "when",
-          description: "Show message date - reply to message",
-        },
-        { command: "weather", description: "Get weather in Celsius" },
-        { command: "trans", description: "Translate text to another language" },
-        { command: "etymology", description: "Get word etymology" },
-        {
-          command: "unsplash",
-          description: "Generate quote image - reply to message",
-        },
-        {
-          command: "ocr",
-          description: "Extract text from image - reply to image",
-        },
-        {
-          command: "wordcloud",
-          description: "Generate word cloud from recent messages",
-        },
-        {
-          command: "createsticker",
-          description: "Create sticker from image with emojis",
-        },
-        { command: "oracle", description: "Get oracle reading with audio" },
-        { command: "archive", description: "Get archive.org link for URL" },
-        { command: "summarize", description: "Summarize article from URL" },
-        { command: "musicstats", description: "View music statistics" },
-        {
-          command: "findalbum",
-          description: "Find album for audio track - reply to audio",
-        },
-        { command: "regex", description: "Search messages by regex pattern" },
-        {
-          command: "search",
-          description: "Semantic search for messages by meaning",
-        },
-        { command: "count", description: "Count message occurrences" },
-        { command: "glossary", description: "Search glossary" },
-        {
-          command: "addtoglossary",
-          description: "Add word to glossary with definition",
-        },
-        {
-          command: "downloadaudio",
-          description:
-            "Reply to a message with a URL to download audio or do /downloadaudio <url>",
-        },
-        {
-          command: "download",
-          description:
-            "Reply to a message with a URL to download a video or do /download <url>",
-        },
-        { command: "cc", description: "Convert currency" },
-        { command: "addsubtitles", description: "add subtitles to a video" },
-        {
-          command: "cut",
-          description: "Cut video from start to end time (reply to video)",
-        },
-        {
-          command: "summary",
-          description: "Summarize last N messages (default: 100)",
-        },
-        { command: "quran", description: "Get a random Quran verse" },
-        { command: "bible", description: "Get a random Bible verse" },
-        {
-          command: "dictionary",
-          description: "Look up a word in the dictionary",
-        },
-        {
-          command: "transcribe",
-          description: "Transcribe audio or voice message (reply to audio)",
-        },
-      ],
-    },
-  )
-  .then(() => {})
-  .catch((err) => {
-    console.error("Failed to register bot commands:", err);
-  });
+	.post(`${process.env.LOCAL_TELEGRAM_API_URL || "http://localhost:8081"}/bot${process.env.TELEGRAM_BOT_TOKEN}/setMyCommands`, {
+		commands: [
+			{
+				command: "help",
+				description: "Display help message with all commands",
+			},
+			{ command: "weather", description: "Get the weather" },
+			{ command: "forecast", description: "Get forecast" },
+			{ command: "8ball", description: "Get a Magic 8-Ball response" },
+			{ command: "coinflip", description: "Flip a coin" },
+			{ command: "calc", description: "Calculate mathematical expressions" },
+			{
+				command: "when",
+				description: "Show message date - reply to message",
+			},
+			{ command: "weather", description: "Get weather in Celsius" },
+			{ command: "trans", description: "Translate text to another language" },
+			{ command: "etymology", description: "Get word etymology" },
+			{
+				command: "unsplash",
+				description: "Generate quote image - reply to message",
+			},
+			{
+				command: "ocr",
+				description: "Extract text from image - reply to image",
+			},
+			{
+				command: "wordcloud",
+				description: "Generate word cloud from recent messages",
+			},
+			{
+				command: "createsticker",
+				description: "Create sticker from image with emojis",
+			},
+			{ command: "oracle", description: "Get oracle reading with audio" },
+			{ command: "archive", description: "Get archive.org link for URL" },
+			{ command: "summarize", description: "Summarize article from URL" },
+			{ command: "musicstats", description: "View music statistics" },
+			{
+				command: "findalbum",
+				description: "Find album for audio track - reply to audio",
+			},
+			{ command: "regex", description: "Search messages by regex pattern" },
+			{
+				command: "search",
+				description: "Semantic search for messages by meaning",
+			},
+			{ command: "count", description: "Count message occurrences" },
+			{
+				command: "wordleaderboard",
+				description: "Show word count leaderboard",
+			},
+			{ command: "glossary", description: "Search glossary" },
+			{
+				command: "addtoglossary",
+				description: "Add word to glossary with definition",
+			},
+			{
+				command: "downloadaudio",
+				description: "Reply to a message with a URL to download audio or do /downloadaudio <url>",
+			},
+			{
+				command: "download",
+				description: "Reply to a message with a URL to download a video or do /download <url>",
+			},
+			{ command: "cc", description: "Convert currency" },
+			{ command: "addsubtitles", description: "add subtitles to a video" },
+			{
+				command: "cut",
+				description: "Cut video from start to end time (reply to video)",
+			},
+			{
+				command: "summary",
+				description: "Summarize last N messages (default: 100)",
+			},
+			{ command: "quran", description: "Get a random Quran verse" },
+			{ command: "bible", description: "Get a random Bible verse" },
+			{
+				command: "dictionary",
+				description: "Look up a word in the dictionary",
+			},
+			{
+				command: "transcribe",
+				description: "Transcribe audio or voice message (reply to audio)",
+			},
+			{
+				command: "reactionstats",
+				description: "Show stats for reactions",
+			},
+			{
+				command: "wordcount",
+				description: "Show word count",
+			},
+		],
+	})
+	.then(() => {})
+	.catch((err) => {
+		console.error("Failed to register bot commands:", err);
+	});
 
 bot.on("edited_message", async (msg) => {
-  const chatId = msg.chat.id;
-  const text = msg.text || "";
-  collection.updateOne(
-    { chatId: chatId, messageId: msg.message_id },
-    { $set: { text: msg.text } },
-  );
-  if (msg.audio?.title && msg.audio?.performer) {
-    await storeMusicInDB(msg.audio, msg);
-  }
-  if (
-    msg.chat.type == "private" &&
-    !process.env.ALLOWED_TO_DM_BOT.split(" ")
-      .map((userid) => Number(userid))
-      .includes(msg.from.id)
-  ) {
-    return;
-  }
-  handleMessages({ chatId, msg, text, messageID: msg.message_id });
+	const chatId = msg.chat.id;
+	const text = msg.text || "";
+	collection.updateOne({ chatId: chatId, messageId: msg.message_id }, { $set: { text: msg.text } });
+	if (msg.audio?.title && msg.audio?.performer) {
+		await storeMusicInDB(msg.audio, msg);
+	}
+	if (
+		msg.chat.type == "private" &&
+		!process.env.ALLOWED_TO_DM_BOT.split(" ")
+			.map((userid) => Number(userid))
+			.includes(msg.from.id)
+	) {
+		return;
+	}
+	handleMessages({ chatId, msg, text, messageID: msg.message_id });
+});
+bot.on("message_reaction", async (msg) => {
+	try {
+		const reactionDoc = {
+			chat_id: msg.chat.id,
+			chat_title: msg.chat.title,
+			chat_type: msg.chat.type,
+			message_id: msg.message_id,
+			user_id: msg.user.id,
+			user_username: msg.user.username,
+			user_first_name: msg.user.first_name,
+			date: new Date(msg.date * 1000),
+			old_reaction: msg.old_reaction,
+			new_reaction: msg.new_reaction,
+			timestamp: new Date(),
+		};
+		await reactionsCollection.insertOne(reactionDoc);
+		console.log("Reaction saved to database");
+	} catch (error) {
+		console.error("Failed to save reaction to database:", error.message);
+	}
 });
 
+/* bot.on("message", async (msg) => {
+	console.log("Message event received, type:", msg.chat.type, "chatId:", msg.chat.id);
+}); */
+setTimeout(() => {
+	console.log("Bot started, waiting for updates...");
+	console.log("Polling URL:", bot.options.baseApiUrl);
+}, 1000);
 function getAdminsIds(chatId) {
-  return new Promise(async (resolve, reject) => {
-    try {
-      let admins = [];
-      try {
-        admins = await bot.getChatAdministrators(chatId);
-      } catch (err) {
-        console.error(err);
-      }
-      const adminIDs = admins.map((admin) => admin.user.id);
-      resolve(adminIDs);
-    } catch (err) {
-      console.error(err);
-      resolve([]);
-    }
-  });
+	return new Promise(async (resolve, reject) => {
+		try {
+			let admins = [];
+			try {
+				admins = await bot.getChatAdministrators(chatId);
+			} catch (err) {
+				console.error(err);
+			}
+			const adminIDs = admins.map((admin) => admin.user.id);
+			resolve(adminIDs);
+		} catch (err) {
+			console.error(err);
+			resolve([]);
+		}
+	});
 }
 
 function isUserAllowedToDM(userId) {
-  const allowedUsers = process.env.ALLOWED_TO_DM_BOT.split(" ").map((userid) =>
-    Number(userid),
-  );
-  return allowedUsers.includes(userId);
+	const allowedUsers = process.env.ALLOWED_TO_DM_BOT.split(" ").map((userid) => Number(userid));
+	return allowedUsers.includes(userId);
 }
-const videoExtensions = [
-  ".mp4",
-  ".avi",
-  ".mov",
-  ".wmv",
-  ".flv",
-  ".webm",
-  ".mkv",
-];
+const videoExtensions = [".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm", ".mkv"];
 
 async function handleSocialMediaLinks(text, chatId, messageId, msg) {
-  extractAndEchoSocialLink(text, (output) => {
-    if (Array.isArray(output)) {
-      output.forEach((media) => {
-        fs.readFile(media, async (err, data) => {
-          if (err) {
-            console.error("error reading file:", media, err);
-            return;
-          }
-          const isVideo = videoExtensions.some((videoext) =>
-            media.endsWith(videoext),
-          );
-          if (isVideo) {
-            bot.sendVideo(chatId, data, { reply_to_message_id: messageId });
-          } else {
-            const sentAudio = await bot.sendAudio(chatId, data, {
-              reply_to_message_id: messageId,
-            });
-            storeMusicInDB(sentAudio.audio, sentAudio, msg.from);
-          }
-        });
-      });
-    }
-  });
+	extractAndEchoSocialLink(text, (output) => {
+		if (Array.isArray(output)) {
+			output.forEach((media) => {
+				fs.readFile(media, async (err, data) => {
+					if (err) {
+						console.error("error reading file:", media, err);
+						return;
+					}
+					const isVideo = videoExtensions.some((videoext) => media.endsWith(videoext));
+					if (isVideo) {
+						bot.sendVideo(chatId, data, { reply_to_message_id: messageId });
+					} else {
+						const sentAudio = await bot.sendAudio(chatId, data, {
+							reply_to_message_id: messageId,
+						});
+						storeMusicInDB(sentAudio.audio, sentAudio, msg.from);
+					}
+				});
+			});
+		}
+	});
 }
 
 async function handleTweetPreview(msg, text, chatId) {
-  const tweetId = extractTweetId(text);
-  if (!tweetId || text.includes("no preview")) {
-    return;
-  }
-  try {
-    const tweetData = await extractTweet(text);
-    if (!tweetData) return;
-    const messageOptions = {
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-      has_spoiler: text.includes("spoiler"),
-    };
-    //const hasVideos = tweetData?.media?.some((media) => media.type == "VIDEO" || media.type == "GIF");
-    if (!text.includes("screenshot")) {
-      let tweetText = `${tweetData?.fullText} \nTweet by ${tweetData?.tweetBy?.fullName || ""} (@${tweetData?.tweetBy?.userName}) on ${tweetData?.createdAt || ""}`;
-      tweetData.media = tweetData.media || [];
-      tweetData.media = await Promise.all(
-        tweetData.media.map((media) => {
-          return new Promise(async (resolve, reject) => {
-            try {
-              media.url = await downloadImageAsBuffer(media.url);
-              resolve(media);
-            } catch (err) {
-              reject(err);
-            }
-          });
-        }),
-      );
+	const tweetId = extractTweetId(text);
+	if (!tweetId || text.includes("no preview")) {
+		return;
+	}
+	try {
+		const tweetData = await extractTweet(text);
+		if (!tweetData) return;
+		const messageOptions = {
+			parse_mode: "HTML",
+			disable_web_page_preview: true,
+			has_spoiler: text.includes("spoiler"),
+		};
+		if (text.includes("translate")) {
+			const translatedText = await translateShell(tweetData.fullText, "en");
+			tweetData.fullText = translatedText;
+		}
+		//const hasVideos = tweetData?.media?.some((media) => media.type == "VIDEO" || media.type == "GIF");
+		if (!text.includes("screenshot")) {
+			let tweetText = `${tweetData?.fullText} \nTweet by ${tweetData?.tweetBy?.fullName || ""} (@${tweetData?.tweetBy?.userName}) on ${tweetData?.createdAt || ""}`;
+			tweetData.media = tweetData.media || [];
+			tweetData.media = await Promise.all(
+				tweetData.media.map((media) => {
+					return new Promise(async (resolve, reject) => {
+						try {
+							media.url = await downloadImageAsBuffer(media.url);
+							resolve(media);
+						} catch (err) {
+							reject(err);
+						}
+					});
+				}),
+			);
 
-      const media = tweetData.media;
-      const mediaCount = media?.length || 0;
+			const media = tweetData.media;
+			const mediaCount = media?.length || 0;
 
-      const tweetTextParts = createMessageBlocks(tweetText, 750).map(
-        (text) => `<blockquote expandable>${text}</blockquote>`,
-      );
-      tweetText = tweetTextParts[0];
-      if (mediaCount === 0) {
-        await bot.sendMessage(chatId, tweetText, messageOptions);
-      } else if (mediaCount === 1) {
-        const singleMedia = media[0];
-        const optionsWithCaption = { ...messageOptions, caption: tweetText };
+			const tweetTextParts = createMessageBlocks(tweetText, 4000).map((text) => `<blockquote expandable>${text}</blockquote>`);
+			tweetText = tweetTextParts[0];
+			if (mediaCount === 0) {
+				await bot.sendMessage(chatId, tweetText, messageOptions);
+			} else if (mediaCount === 1) {
+				const singleMedia = media[0];
+				const optionsWithCaption = { ...messageOptions, caption: tweetText };
 
-        if (singleMedia.type === "VIDEO" || singleMedia.type == "GIF") {
-          await bot.sendVideo(chatId, singleMedia.url, optionsWithCaption);
-        } else {
-          await bot.sendPhoto(chatId, singleMedia.url, optionsWithCaption);
-        }
-      } else if (mediaCount > 1 && mediaCount <= 10) {
-        const mediaGroup = media.map((item, index) => ({
-          type: item.type.toLowerCase(),
-          media: item.url,
-          ...(index === 0 && { caption: tweetText, parse_mode: "HTML" }),
-        }));
-        await bot.sendMediaGroup(chatId, mediaGroup);
-      } else {
-        for (const item of media) {
-          if (item.type === "VIDEO" || item.type == "GIF") {
-            await bot.sendVideo(chatId, item.url);
-          } else if (item.type === "PHOTO") {
-            await bot.sendPhoto(chatId, item.url);
-          }
-        }
-        await bot.sendMessage(chatId, tweetText, messageOptions);
-      }
-      if (tweetTextParts.length > 1) {
-        for (let i = 1; i < tweetTextParts.length; i++) {
-          await bot.sendMessage(chatId, tweetTextParts[i], messageOptions);
-        }
-      }
-    } else {
-      await bot.sendPhoto(
-        chatId,
-        await generateTweetScreenshot(tweetData),
-        messageOptions,
-      );
-    }
-  } catch (error) {
-    console.error("Failed to send tweet media:", error);
-  }
+				if (singleMedia.type === "VIDEO" || singleMedia.type == "GIF") {
+					await bot.sendVideo(chatId, singleMedia.url, optionsWithCaption);
+				} else {
+					await bot.sendPhoto(chatId, singleMedia.url, optionsWithCaption);
+				}
+			} else if (mediaCount > 1 && mediaCount <= 10) {
+				const mediaGroup = media.map((item, index) => ({
+					type: item.type.toLowerCase(),
+					media: item.url,
+					...(index === 0 && { caption: tweetText, parse_mode: "HTML" }),
+				}));
+				await bot.sendMediaGroup(chatId, mediaGroup);
+			} else {
+				for (const item of media) {
+					if (item.type === "VIDEO" || item.type == "GIF") {
+						await bot.sendVideo(chatId, item.url);
+					} else if (item.type === "PHOTO") {
+						await bot.sendPhoto(chatId, item.url);
+					}
+				}
+				await bot.sendMessage(chatId, tweetText, messageOptions);
+			}
+			if (tweetTextParts.length > 1) {
+				for (let i = 1; i < tweetTextParts.length; i++) {
+					await bot.sendMessage(chatId, tweetTextParts[i], messageOptions);
+				}
+			}
+		} else {
+			await bot.sendPhoto(chatId, await generateTweetScreenshot(tweetData), messageOptions);
+		}
+	} catch (error) {
+		console.error("Failed to send tweet media:", error);
+	}
 }
 
 async function handleTriggerWordLogging(msg, text, chatId) {
-  if (msg.chat.type !== "group" && msg.chat.type !== "supergroup") {
-    return;
-  }
+	if (msg.chat.type !== "group" && msg.chat.type !== "supergroup") {
+		return;
+	}
 
-  const triggerWords = process.env.TRIGGER_WORDS?.split(" ") || [];
-  if (
-    triggerWords.some((word) => text.toLowerCase().includes(word.toLowerCase()))
-  ) {
-    await bot.sendMessage(
-      process.env.LogChat,
-      `https://t.me/c/${msg.chat.id.toString().slice(4)}/${msg.message_id}`,
-    );
-    await bot.forwardMessage(process.env.LogChat, chatId, msg.message_id);
-  }
+	const triggerWords = process.env.TRIGGER_WORDS?.split(" ") || [];
+	if (triggerWords.some((word) => text.toLowerCase().includes(word.toLowerCase()))) {
+		await bot.sendMessage(process.env.LogChat, `https://t.me/c/${msg.chat.id.toString().slice(4)}/${msg.message_id}`);
+		await bot.forwardMessage(process.env.LogChat, chatId, msg.message_id);
+	}
 }
 
 async function storeMessageInDB(msg, chatId) {
-  if (!msg.text || msg.text?.trim()?.startsWith("/")) {
-    return;
-  }
+	if (!msg.text || msg.text?.trim()?.startsWith("/")) {
+		return;
+	}
 
-  const newMessage = {
-    chatId: chatId,
-    messageId: msg.message_id,
-    text: msg.text,
-    date: new Date(msg.date * 1000),
-    sender: [msg.from.first_name, msg.from.last_name].join(" "),
-  };
+	const newMessage = {
+		chatId: chatId,
+		messageId: msg.message_id,
+		text: msg.text,
+		date: new Date(msg.date * 1000),
+		sender: [msg.from.first_name, msg.from.last_name].join(" "),
+	};
 
-  collection.insertOne({ ...newMessage }).catch((err) => {
-    console.error(err);
-  });
+	collection.insertOne({ ...newMessage }).catch((err) => {
+		console.error(err);
+	});
 }
 
 async function storeMusicInDB(audio, msg, actualSender) {
-  msg.from = actualSender ? actualSender : msg.from;
-  const alreadyExists = await collection.findOne({ messageId: msg.messageId });
-  if (!alreadyExists) {
-    const musicData = {
-      chatId: msg.chat.id,
-      messageId: msg.messageId,
-      file_name: audio?.file_name,
-      title: audio.title,
-      performer: audio.performer,
-      date: new Date(msg.date * 1000),
-      sender: [msg.from.first_name, msg.from.last_name].join(" "),
-    };
+	msg.from = actualSender ? actualSender : msg.from;
+	const alreadyExists = await collection.findOne({ messageId: msg.messageId });
+	if (!alreadyExists) {
+		const musicData = {
+			chatId: msg.chat.id,
+			messageId: msg.messageId,
+			file_name: audio?.file_name,
+			title: audio.title,
+			performer: audio.performer,
+			date: new Date(msg.date * 1000),
+			sender: [msg.from.first_name, msg.from.last_name].join(" "),
+		};
 
-    musicCollection.insertOne({ ...musicData }).catch((err) => {
-      console.error(err);
-    });
-  }
+		musicCollection.insertOne({ ...musicData }).catch((err) => {
+			console.error(err);
+		});
+	}
 }
 
-async function storeTarotReadingInDB(
-  userId,
-  chatId,
-  cards,
-  interpretation,
-  question = "",
-) {
-  const readingData = {
-    userId: userId,
-    chatId: chatId,
-    cards: cards,
-    interpretation: interpretation,
-    question: question,
-    date: new Date(),
-  };
+async function storeTarotReadingInDB(userId, chatId, cards, interpretation, question = "") {
+	const readingData = {
+		userId: userId,
+		chatId: chatId,
+		cards: cards,
+		interpretation: interpretation,
+		question: question,
+		date: new Date(),
+	};
 
-  tarotCollection.insertOne(readingData).catch((err) => {
-    console.error(err);
-  });
+	tarotCollection.insertOne(readingData).catch((err) => {
+		console.error(err);
+	});
 }
 
 async function getLastTarotReading(userId, chatId) {
-  try {
-    const lastReading = await tarotCollection.findOne(
-      { userId: userId, chatId: chatId },
-      { sort: { date: -1 } },
-    );
-    return lastReading;
-  } catch (err) {
-    console.error(err);
-    return null;
-  }
+	try {
+		const lastReading = await tarotCollection.findOne({ userId: userId, chatId: chatId }, { sort: { date: -1 } });
+		return lastReading;
+	} catch (err) {
+		console.error(err);
+		return null;
+	}
 }
 
 bot.on("audio", async (msg) => {
-  if (msg.audio?.title && msg.audio?.performer) {
-    await storeMusicInDB(msg.audio, msg);
-  }
+	if (msg.audio?.title && msg.audio?.performer) {
+		await storeMusicInDB(msg.audio, msg);
+	}
 });
 
 bot.on("voice", async (msg) => {
-  try {
-    const chatId = msg.chat.id;
-    const voice = msg.voice;
-    if (!voice) return;
-    const randomChance = Math.random();
-    /* if (randomChance < 0.4) {
+	try {
+		const chatId = msg.chat.id;
+		const voice = msg.voice;
+		if (!voice) return;
+		const randomChance = Math.random();
+		/* if (randomChance < 0.4) {
 			console.log("denied", randomChance);
 			return;
 		} */
-    console.log(
-      `Voice message received from ${msg.from.id} in ${chatId}, duration: ${voice.duration}s`,
-    );
+		console.log(`Voice message received from ${msg.from.id} in ${chatId}, duration: ${voice.duration}s`);
 
-    if (voice.duration > 300) {
-      console.log(
-        `Long voice message (${voice.duration}s), transcription may take time.`,
-      );
-    }
+		if (voice.duration > 300) {
+			console.log(`Long voice message (${voice.duration}s), transcription may take time.`);
+		}
 
-    const file = await bot.getFile(voice.file_id);
-    const localFilePath = file.file_path;
+		const file = await bot.getFile(voice.file_id);
+		const localFilePath = file.file_path;
 
-    if (!require("fs").existsSync(localFilePath)) {
-      console.error(`File not found at ${localFilePath}`);
-      return;
-    }
+		if (!require("fs").existsSync(localFilePath)) {
+			console.error(`File not found at ${localFilePath}`);
+			return;
+		}
 
-    console.log(`Voice file located at ${localFilePath}`);
+		console.log(`Voice file located at ${localFilePath}`);
 
-    const transcription = await transcribeAudio(localFilePath);
+		const transcription = await transcribeAudio(localFilePath);
 
-    if (!transcription || transcription.trim().length === 0) {
-      console.log("Transcription empty, skipping sentiment analysis");
-      return;
-    }
+		if (!transcription || transcription.trim().length === 0) {
+			console.log("Transcription empty, skipping sentiment analysis");
+			return;
+		}
 
-    let emoji = null;
-    try {
-      const sentimentResults = await analyzeSentiment(transcription);
-      const result = sentimentResults[0];
-      if (result.score < 0.75) {
-        console.log("voice sentiment too weak", {
-          score: result.score,
-          emotion: result.label,
-        });
-        return;
-      }
-      if (result) {
-        console.log("vm emotion", result);
-        emoji = emotionToEmoji(result.label);
-      }
-    } catch (sentimentError) {
-      console.error("Sentiment analysis failed:", sentimentError);
-    }
+		let emoji = null;
+		try {
+			const sentimentResults = await analyzeSentiment(transcription);
+			const result = sentimentResults[0];
+			if (result.score < 0.75) {
+				console.log("voice sentiment too weak", {
+					score: result.score,
+					emotion: result.label,
+				});
+				return;
+			}
+			if (result) {
+				console.log("vm emotion", result);
+				emoji = emotionToEmoji(result.label);
+			}
+		} catch (sentimentError) {
+			console.error("Sentiment analysis failed:", sentimentError);
+		}
 
-    if (emoji && emoji.length > 0 && allowedReactionEmojis.includes(emoji)) {
-      const canReact = (chatId, cooldown = 60 * 60_000) => {
-        const key = `audioReactionCooldown:${chatId}`;
-        if (myCache.get(key)) return false;
-        myCache.set(key, true, cooldown / 1000);
-        return true;
-      };
-      if (canReact(msg.chat.id)) {
-        reactToTelegramMessage(
-          process.env.TELEGRAM_BOT_TOKEN,
-          emoji,
-          chatId,
-          msg.message_id,
-        );
-      }
-    }
-  } catch (error) {
-    console.error("Voice transcription failed:", error);
-  }
+		if (emoji && emoji.length > 0 && allowedReactionEmojis.includes(emoji)) {
+			const canReact = (chatId, cooldown = 60 * 60_000) => {
+				const key = `audioReactionCooldown:${chatId}`;
+				if (myCache.get(key)) return false;
+				myCache.set(key, true, cooldown / 1000);
+				return true;
+			};
+			if (canReact(msg.chat.id)) {
+				reactToTelegramMessage(bot, emoji, chatId, msg.message_id);
+			}
+		}
+	} catch (error) {
+		console.error("Voice transcription failed:", error);
+	}
 });
 /* bot.on("photo", async (msg) => {
 	const photoMedia = msg.photo.pop();
@@ -598,15 +577,18 @@ bot.on("voice", async (msg) => {
 		});
 	}
 }); */
+
+const antCollection = db.collection("ants");
+
 bot.on("text", async (msg) => {
-  const chatId = msg.chat.id;
-  const text = msg.text || msg.caption;
+	const chatId = msg.chat.id;
+	const text = msg.text || msg.caption;
 
-  if (msg.chat.type === "private" && !isUserAllowedToDM(msg.from.id)) {
-    return;
-  }
+	if (msg.chat.type === "private" && !isUserAllowedToDM(msg.from.id)) {
+		return;
+	}
 
-  /* const probability = Math.random();
+	/* const probability = Math.random();
 	const triggerPattern = process.env.TRIGGER_TERMS || "";
 	const regex = new RegExp(`\\b(${triggerPattern})\\b`, "gi");
 	let count = 0;
@@ -625,143 +607,115 @@ bot.on("text", async (msg) => {
 		}
 	} */
 
-  /* 	const redditLink = extractOldRedditLink(msg.text);
+	/* 	const redditLink = extractOldRedditLink(msg.text);
 	if (redditLink) {
 		const image = await screenshotRedditPost(redditLink);
 		bot.sendPhoto(msg.chat.id, image);
 	} */
-  const antCollection = db.collection("ants");
+	handleTimeReminders(msg, antCollection, bot);
 
-  const melbourneNow = new Date(
-    new Date().toLocaleString("en-US", { timeZone: "Australia/Melbourne" }),
-  );
+	if (text.trim().length > 0) {
+		analyzeSentiment(text).then((analysis) => {
+			const canReact = (chatId, cooldown = 60 * 60_000) => {
+				const key = `reactionCooldown:${chatId}`;
+				if (myCache.get(key)) return false;
 
-  const hour = melbourneNow.getHours();
-  const isBetweenMidnightAndThreeAMInAus = hour >= 0 && hour < 3;
+				myCache.set(key, true, cooldown / 1000);
+				return true;
+			};
 
-  const todayMelbourne = melbourneNow.toISOString().slice(0, 10);
-  const antIDs = process.env.ANT_ID?.split(" ").map(Number) ?? [];
+			const result = analysis[0];
+			if (msg.chat.title.includes("testing")) result.score = 1;
+			if (result.label == "neutral") return;
+			if (result.score < 0.9) return;
+			const later = (fn, min = 5000, max = 10000) =>
+				setTimeout(
+					() => {
+						fn();
+						console.log("reacted later");
+					},
+					min + Math.random() * (max - min),
+				);
 
-  if (antIDs.includes(msg.from.id) && isBetweenMidnightAndThreeAMInAus) {
-    const ant = await antCollection.findOne({ userId: msg.from.id });
+			const chaos = Math.abs(Math.sin(Date.now() % 10000)) * Math.random();
+			const maybe = (p) => Math.random() < p;
 
-    if (ant?.lastSentDate !== todayMelbourne) {
-      await bot.sendMessage(msg.chat.id, sleepQuotes.random());
+			const mood = Math.floor(Date.now() / 60000) % 3;
+			const moodChance = mood === 0 ? 0.2 : mood === 1 ? 0.3 : 0.25;
 
-      await antCollection.updateOne(
-        { userId: msg.from.id },
-        { $set: { lastSentDate: todayMelbourne } },
-        { upsert: true },
-      );
-    }
-  }
-  if (text.trim().length > 0) {
-    analyzeSentiment(text).then((analysis) => {
-      const canReact = (chatId, cooldown = 60 * 60_000) => {
-        const key = `reactionCooldown:${chatId}`;
-        if (myCache.get(key)) return false;
+			if (!maybe(moodChance)) {
+				console.log("Reaction refused", {
+					chat: msg.chat.title,
+					acceptanceChance: moodChance,
+					score: result.score,
+					emotion: result.label,
+					text,
+				});
+				return;
+			}
+			console.log({ chaos, moodChance });
 
-        myCache.set(key, true, cooldown / 1000);
-        return true;
-      };
-
-      const result = analysis[0];
-      if (msg.chat.title.includes("testing")) result.score = 1;
-      if (result.label == "neutral") return;
-      if (result.score < 0.9) return;
-      const later = (fn, min = 5000, max = 10000) =>
-        setTimeout(
-          () => {
-            fn();
-            console.log("reacted later");
-          },
-          min + Math.random() * (max - min),
-        );
-
-      const chaos = Math.abs(Math.sin(Date.now() % 10000)) * Math.random();
-      const maybe = (p) => Math.random() < p;
-
-      const mood = Math.floor(Date.now() / 60000) % 3;
-      const moodChance = mood === 0 ? 0.05 : mood === 1 ? 0.1 : 0.08;
-
-      if (!maybe(moodChance)) {
-        console.log("Reaction refused", {
-          chat: msg.chat.title,
-          acceptanceChance: moodChance,
-          score: result.score,
-          emotion: result.label,
-          text,
-        });
-        return;
-      }
-      console.log({ chaos, moodChance });
-
-      const react = () => {
-        const emoji = emotionToEmoji(result.label);
-        if (!emoji.length) return;
-        if (!canReact(chatId)) {
-          console.log("cooldown active for chat");
-          return;
-        }
-        reactToTelegramMessage(
-          process.env.TELEGRAM_BOT_TOKEN,
-          emoji,
-          chatId,
-          msg.message_id,
-        );
-      };
-      if (maybe(0.4)) {
+			const react = () => {
+				const emoji = emotionToEmoji(result.label);
+				if (!emoji.length) return;
+				if (!canReact(chatId)) {
+					console.log("cooldown active for chat");
+					return;
+				}
+				reactToTelegramMessage(bot, emoji, chatId, msg.message_id);
+			};
+			/* if (maybe(0.4)) {
         console.log("double react triggered");
         if (!canReact(chatId)) {
           console.log("cooldown active for chat");
           return;
         }
         reactToTelegramMessage(
-          process.env.TELEGRAM_BOT_TOKEN,
+          bot,
           allowedReactionEmojis.random(),
           chatId,
           msg.message_id,
         );
         later(react);
         return;
-      }
-      if (maybe(0.01)) {
-        console.log("later react triggered");
-        setTimeout(react, 120000);
-        return;
-      }
-      console.log("regular react triggered");
+      } */
+			if (maybe(0.01)) {
+				console.log("later react triggered");
+				setTimeout(react, 120000);
+				return;
+			}
+			console.log("regular react triggered");
 
-      react();
-    });
-  }
+			react();
+		});
+	}
 
-  await handleSocialMediaLinks(text, chatId, msg.message_id, msg);
+	await handleSocialMediaLinks(text, chatId, msg.message_id, msg);
 
-  await handleTweetPreview(msg, text, chatId);
+	await handleTweetPreview(msg, text, chatId);
 
-  await handleTriggerWordLogging(msg, text, chatId);
+	await handleTriggerWordLogging(msg, text, chatId);
 
-  await storeMessageInDB(msg, chatId);
+	await storeMessageInDB(msg, chatId);
 
-  if (text.trim()[0] === "/") {
-    const sender = msg.from;
-    handleMessages({ chatId, text, msg, sender });
-  }
+	if (text.trim()[0] === "/") {
+		const sender = msg.from;
+		handleMessages({ chatId, text, msg, sender });
+	}
 });
 function getRandomElement(arr) {
-  const randomIndex = Math.floor(Math.random() * arr.length);
-  return arr[randomIndex];
+	const randomIndex = Math.floor(Math.random() * arr.length);
+	return arr[randomIndex];
 }
 async function handleMessages({ chatId, msg, text, sender }) {
-  try {
-    const splitCommand = text.split(" ")[0].split("@");
-    const command = splitCommand[0];
-    const botName = splitCommand[1];
-    if (command && (botName === process.env.BOT_USERNAME || !botName)) {
-      switch (command) {
-        case "/help":
-          const message = `<blockquote expandable>Welcome! 🤖
+	try {
+		const splitCommand = text.split(" ")[0].split("@");
+		const command = splitCommand[0];
+		const botName = splitCommand[1];
+		if (command && (botName === process.env.BOT_USERNAME || !botName)) {
+			switch (command) {
+				case "/help":
+					const message = `<blockquote expandable>Welcome! 🤖
 
 Here are the commands you can use:
 
@@ -789,6 +743,7 @@ Here are the commands you can use:
 <b>Analysis:</b>
 /archive - Get archive.org link for URL
 /summarize - Summarize article from URL
+/reactionstats - Show reaction leaderboard for this chat
 
 <b>Tarot Readings:</b>
 /tarot1 - Single card reading
@@ -803,6 +758,7 @@ Here are the commands you can use:
 <b>Search & Database:</b>
 /regex [pattern] - Search messages by regex
 /count [pattern] - Count message occurrences
+/wordcount- Show word count leaderboard
 /glossary [word] - Search glossary
 /addtoglossary word : definition - Add to glossary
 /deleteFromGlossary [id] - Delete from glossary
@@ -817,806 +773,677 @@ Here are the commands you can use:
 </blockquote>
 `;
 
-          handleResponse(message, msg, chatId, myCache, bot, null).catch(
-            (err) => {
-              console.error(err);
-            },
-          );
-          break;
+					handleResponse(message, msg, chatId, myCache, bot, null).catch((err) => {
+						console.error(err);
+					});
+					break;
 
-        case "/transcribe":
-          if (
-            msg.reply_to_message &&
-            (msg.reply_to_message.audio || msg.reply_to_message.voice)
-          ) {
-            const file = await bot.getFile(
-              msg.reply_to_message.voice
-                ? msg.reply_to_message.voice.file_id
-                : msg.reply_to_message.audio.file_id,
-            );
-            try {
-              const transcription = await transcribeAudio(file.file_path);
+				case "/transcribe":
+					if (msg.reply_to_message && (msg.reply_to_message.audio || msg.reply_to_message.voice)) {
+						const file = await bot.getFile(msg.reply_to_message.voice ? msg.reply_to_message.voice.file_id : msg.reply_to_message.audio.file_id);
+						try {
+							const transcription = await transcribeAudio(file.file_path);
+							await bot.sendMessage(chatId, `<blockquote expandable>\n${transcription}</blockquote>`, {
+								reply_to_message_id: msg.message_id,
+								parse_mode: "HTML",
+							});
+						} catch (error) {
+							console.error("Transcription failed:", error);
+							await bot.sendMessage(chatId, `failed: ${error.message}`, {
+								reply_to_message_id: msg.message_id,
+							});
+						}
+					} else {
+						await bot.sendMessage(chatId, "Please reply to an audio or voice message to transcribe.", { reply_to_message_id: msg.message_id });
+					}
+					break;
+
+				case "/wordcloud":
+					collection
+						.find({ chatId })
+						.sort({ date: -1 })
+						.limit(500)
+						.toArray()
+						.then((result) => {
+							const messages = result.map((message) => message.text).join(" ");
+							generateWordCloud(messages).then((wordCloudImage) => {
+								const fileOptions = {
+									filename: "image.png",
+									contentType: "image/png",
+								};
+								bot.sendPhoto(chatId, wordCloudImage, { reply_to_message_id: msg.message_id }, fileOptions);
+							});
+						});
+
+					break;
+				case "/8ball":
+					const response = getRandomElement(eightBallResponses);
+					handleResponse(response, msg, chatId, myCache, bot, null).catch((err) => {
+						console.error(err);
+					});
+					break;
+
+				case "/downloadaudio":
+					forceAudio = true;
+				case "/download":
+					const downloadLinkStr = [msg.reply_to_message?.text || "", msg.text].join(" ");
+					downloadVideoFromUrl(downloadLinkStr, !!forceAudio, (output) => {
+						const messageId = msg.message_id;
+						if (Array.isArray(output)) {
+							output.forEach((media) => {
+								fs.readFile(media, async (err, data) => {
+									if (err) {
+										console.error("error reading file:", media, err);
+										return;
+									}
+									const isVideo = videoExtensions.some((videoext) => media.endsWith(videoext));
+									if (isVideo) {
+										bot.sendVideo(
+											chatId,
+											data,
+											{
+												reply_to_message_id: messageId,
+											},
+											{
+												filename: new Date() + "video.mp4",
+												contentType: "video/mp4",
+											},
+										);
+									} else {
+										const sentAudio = await bot.sendAudio(chatId, data, {
+											reply_to_message_id: messageId,
+										});
+										storeMusicInDB(sentAudio.audio, sentAudio, msg.from);
+									}
+								});
+							});
+						}
+					});
+					break;
+
+				case "/calc":
+					const expression = msg.text.split(" ").slice(1).join(" ");
+					let result = math.evaluate(expression);
+					handleResponse(`${result}`, msg, chatId, myCache, bot, null).catch((err) => {
+						console.error(err);
+					});
+					break;
+
+				case "/cc":
+				case "/currencyConvert":
+					const input = msg.text.split(" ").slice(1);
+					if (input.length > 4) return;
+					const amount = Number(input[0].replace(/,/g, ""));
+					const currencyFrom = input[1];
+					if (!currencyFrom) {
+						handleResponse("Missing input currency. Example command : /cc 25000 XOF to USD.", msg, chatId, myCache, bot, null).catch((err) => {
+							console.error(err);
+						});
+						return;
+					}
+					const currencyTo = input[2] !== "to" ? input[2] : input[3] || "USD";
+					if (Number.isFinite(amount)) {
+						Convert(amount)
+							.from(currencyFrom)
+							.to(currencyTo)
+							.then((response) => {
+								handleResponse(`${amount} ${currencyFrom} => ${Number(response).toFixed(2)} ${currencyTo}`, msg, chatId, myCache, bot, null).catch((err) => {
+									console.error(err);
+								});
+							})
+							.catch((err) => {
+								console.error(err);
+							});
+					}
+					break;
+				case "/cf":
+				case "/coinflip":
+					const isHead = Math.random() < 0.5;
+					handleResponse(isHead ? "Heads." : "Tails.", msg, chatId, myCache, bot, null).catch((err) => {
+						console.error(err);
+					});
+					break;
+
+				case "/unsplash":
+					let replyToMessage = msg.reply_to_message;
+					if (msg.reply_to_message?.forward_from) {
+						replyToMessage = { from: msg.reply_to_message?.forward_from };
+					}
+					if (msg.reply_to_message?.forward_origin) {
+						replyToMessage = {
+							from: {
+								first_name: msg.reply_to_message?.forward_origin?.sender_user_name || msg.reply_to_message?.forward_origin?.sender_user?.first_name,
+							},
+						};
+					}
+					if (msg.quote?.text) {
+						msg.quote.text = `${msg.quote.position != 0 ? "..." : ""}${msg.quote.text}${msg.quote.position + msg.quote.text.length < msg.reply_to_message.text.length ? "..." : ""}`;
+					}
+					const messageToQuote = (msg.quote?.text || msg.reply_to_message?.text || msg.reply_to_message?.caption).replace(/\n/g, "<br/>");
+					if (replyToMessage) {
+						generateUnsplashImage(messageToQuote, replyToMessage.from)
+							.then((buffer) => {
+								const fileOptions = {
+									filename: "image.png",
+									contentType: "image/png",
+								};
+								bot.sendPhoto(chatId, buffer, { reply_to_message_id: msg.message_id }, fileOptions);
+							})
+							.catch((err) => {
+								console.error(error);
+							});
+					}
+					break;
+				case "/delete":
+					const deleteMsg = async () => {
+						try {
+							bot.deleteMessage(chatId, msg.message_id);
+							bot.deleteMessage(chatId, msg.reply_to_message?.message_id);
+						} catch (err) {
+							console.error(err);
+						}
+					};
+					if (msg?.from.id == process.env.STICKER_OWNER) deleteMsg();
+
+					break;
+				case "/no":
+					axios.get("https://naas.isalman.dev/no").then((response) => {
+						handleResponse(response.data.reason, msg, chatId, myCache, bot, null).catch((err) => {
+							console.error(err);
+						});
+					});
+					break;
+				case "/forecast":
+					{
+						const userInput = text.split(" ").slice(1).join(" ");
+
+						const dayIndex = extractDayOffset(userInput);
+						const location = extractLocation(userInput);
+						getForecastDay(location, dayIndex)
+							.then(async (weatherData) => {
+								handleResponse(weatherData, msg, chatId, myCache, bot, null).catch((err) => {
+									console.error(err);
+								});
+							})
+							.catch((err) => {
+								console.error(err);
+							});
+					}
+					break;
+				case "/weather":
+					const location = text.split(" ").slice(1).join(" ");
+					getWeather(location)
+						.then(async (weatherData) => {
+							handleResponse(weatherData, msg, chatId, myCache, bot, null).catch((err) => {
+								console.error(err);
+							});
+						})
+						.catch((err) => {
+							console.error(err);
+						});
+					break;
+				case "/processPoll":
+					bot.sendMessage(msg.chat.id, `I am connected to: ${bot.options.baseApiUrl}`);
+					break;
+
+				case "/invite":
+					const invite = text.split(" ").slice(1).join(" ");
+					sendPoll(db, msg.chat.id, `Invite ${invite} to the chat?`, [{ text: "Yes" }, { text: "No" }], false);
+					break;
+				case "/voteban":
+					const victim = text.split(" ").slice(1).join(" ");
+					sendPoll(db, msg.chat.id, `Ban ${victim}?`, [{ text: "Yes" }, { text: "No" }], true);
+					break;
+
+				case "/cis":
+				case "/trans":
+					let textMsg = text.split(" ").slice(1).join(" ");
+					let languageInfo = textMsg.split(" ")[0];
+					if (!languageInfo.includes(":")) {
+						languageInfo = null;
+					} else {
+						textMsg = textMsg.split(" ").slice(1).join(" ");
+					}
+					const translateString = (textMsg.trim().length ? textMsg : msg.quote?.text || msg.reply_to_message?.text || msg.reply_to_message?.caption) || "";
+
+					translateShell(translateString.replace(/['"]/g, "\\$&"), languageInfo)
+						.then(async (response) => {
+							if (response.length == 0) {
+								handleResponse("Translation failed or returned empty.", msg, chatId, myCache, bot, null).catch((err) => console.error(err));
+								return;
+							}
+							handleResponse(
+								`<blockquote expandable> ${response} </blockquote>`
+									.replace(ansiEscapeRegex, "")
+									.replace(/\n\s*\n/g, "\n")
+									.trim(),
+								msg,
+								chatId,
+								myCache,
+								bot,
+								null,
+							).catch((err) => {
+								console.error(err);
+							});
+						})
+						.catch((err) => {
+							console.error(err);
+						});
+					break;
+				case "/when":
+					let reply = `Date: ${new Date(msg.reply_to_message.date * 1000).toUTCString()}`;
+					if (msg.reply_to_message.forward_date) {
+						reply += `\nOriginal date: ${new Date(msg.reply_to_message.forward_date * 1000).toUTCString()}`;
+					}
+					handleResponse(reply, msg, chatId, myCache, bot).catch((err) => {
+						console.error(err);
+					});
+					break;
+				case "/reactionstats":
+					try {
+						const topUsers = await reactionsCollection
+							.aggregate([
+								{ $match: { chat_id: chatId } },
+								{ $unwind: "$new_reaction" },
+								{ $group: { _id: "$user_id", total_reactions: { $sum: 1 } } },
+								{ $sort: { total_reactions: -1 } },
+								{ $limit: 10 },
+							])
+							.toArray();
+
+						/* if (topUsers.length === 0) {
               await bot.sendMessage(
                 chatId,
-                `<blockquote expandable>\n${transcription}</blockquote>`,
+                "No reaction data found for this chat.",
                 {
                   reply_to_message_id: msg.message_id,
-                  parse_mode: "HTML",
                 },
               );
-            } catch (error) {
-              console.error("Transcription failed:", error);
-              await bot.sendMessage(chatId, `failed: ${error.message}`, {
-                reply_to_message_id: msg.message_id,
-              });
-            }
-          } else {
-            await bot.sendMessage(
-              chatId,
-              "Please reply to an audio or voice message to transcribe.",
-              { reply_to_message_id: msg.message_id },
-            );
-          }
-          break;
+              break;
+            } */
 
-        case "/wordcloud":
-          collection
-            .find({ chatId })
-            .sort({ date: -1 })
-            .limit(100)
-            .toArray()
-            .then((result) => {
-              const messages = result.map((message) => message.text).join(" ");
-              generateWordCloud(messages).then((wordCloudImage) => {
-                const fileOptions = {
-                  filename: "image.png",
-                  contentType: "image/png",
-                };
-                bot.sendPhoto(
-                  chatId,
-                  wordCloudImage,
-                  { reply_to_message_id: msg.message_id },
-                  fileOptions,
-                );
-              });
-            });
+						const leaderboard = [];
+						for (const user of topUsers) {
+							const userId = user._id;
 
-          break;
-        case "/downloadaudio":
-          forceAudio = true;
-        case "/download":
-          const downloadLinkStr = [
-            msg.reply_to_message?.text || "",
-            msg.text,
-          ].join(" ");
-          downloadVideoFromUrl(downloadLinkStr, !!forceAudio, (output) => {
-            const messageId = msg.messageId;
-            if (Array.isArray(output)) {
-              output.forEach((media) => {
-                fs.readFile(media, async (err, data) => {
-                  if (err) {
-                    console.error("error reading file:", media, err);
-                    return;
-                  }
-                  const isVideo = videoExtensions.some((videoext) =>
-                    media.endsWith(videoext),
-                  );
-                  if (isVideo) {
-                    bot.sendVideo(
-                      chatId,
-                      data,
-                      {
-                        reply_to_message_id: messageId,
-                      },
-                      {
-                        filename: new Date() + "video.mp4",
-                        contentType: "video/mp4",
-                      },
-                    );
-                  } else {
-                    const sentAudio = await bot.sendAudio(chatId, data, {
-                      reply_to_message_id: messageId,
-                    });
-                    storeMusicInDB(sentAudio.audio, sentAudio, msg.from);
-                  }
-                });
-              });
-            }
-          });
-          break;
+							const topEmoji = await reactionsCollection
+								.aggregate([
+									{ $match: { chat_id: chatId, user_id: userId } },
+									{ $unwind: "$new_reaction" },
+									{
+										$group: {
+											_id: "$new_reaction.emoji",
+											count: { $sum: 1 },
+										},
+									},
+									{ $sort: { count: -1 } },
+									{ $limit: 1 },
+								])
+								.toArray();
 
-        case "/calc":
-          const expression = msg.text.split(" ").slice(1).join(" ");
-          let result = math.evaluate(expression);
-          handleResponse(`${result}`, msg, chatId, myCache, bot, null).catch(
-            (err) => {
-              console.error(err);
-            },
-          );
-          break;
+							const topEmojiStr = topEmoji.length > 0 ? topEmoji[0]._id : "❓";
+							const emojiCount = topEmoji.length > 0 ? topEmoji[0].count : 0;
 
-        case "/cc":
-        case "/currencyConvert":
-          const input = msg.text.split(" ").slice(1);
-          if (input.length > 4) return;
-          const amount = Number(input[0].replace(/,/g, ""));
-          const currencyFrom = input[1];
-          if (!currencyFrom) {
-            handleResponse(
-              "Missing input currency. Example command : /cc 25000 XOF to USD.",
-              msg,
-              chatId,
-              myCache,
-              bot,
-              null,
-            ).catch((err) => {
-              console.error(err);
-            });
-            return;
-          }
-          const currencyTo = input[2] !== "to" ? input[2] : input[3] || "USD";
-          if (Number.isFinite(amount)) {
-            Convert(amount)
-              .from(currencyFrom)
-              .to(currencyTo)
-              .then((response) => {
-                handleResponse(
-                  `${amount} ${currencyFrom} => ${Number(response).toFixed(2)} ${currencyTo}`,
-                  msg,
-                  chatId,
-                  myCache,
-                  bot,
-                  null,
-                ).catch((err) => {
-                  console.error(err);
-                });
-              })
-              .catch((err) => {
-                console.error(err);
-              });
-          }
-          break;
-        case "/cf":
-        case "/coinflip":
-          const isHead = Math.random() < 0.5;
-          handleResponse(
-            isHead ? "Heads." : "Tails.",
-            msg,
-            chatId,
-            myCache,
-            bot,
-            null,
-          ).catch((err) => {
-            console.error(err);
-          });
-          break;
+							const userReaction = await reactionsCollection.findOne(
+								{ chat_id: chatId, user_id: userId },
+								{ projection: { user_username: 1, user_first_name: 1 } },
+							);
 
-        case "/unsplash":
-          let replyToMessage = msg.reply_to_message;
-          if (msg.reply_to_message?.forward_from) {
-            replyToMessage = { from: msg.reply_to_message?.forward_from };
-          }
-          if (msg.reply_to_message?.forward_origin) {
-            replyToMessage = {
-              from: {
-                first_name:
-                  msg.reply_to_message?.forward_origin?.sender_user_name ||
-                  msg.reply_to_message?.forward_origin?.sender_user?.first_name,
-              },
-            };
-          }
-          if (msg.quote?.text) {
-            msg.quote.text = `${msg.quote.position != 0 ? "..." : ""}${msg.quote.text}${msg.quote.position + msg.quote.text.length < msg.reply_to_message.text.length ? "..." : ""}`;
-          }
-          const messageToQuote = (
-            msg.quote?.text ||
-            msg.reply_to_message?.text ||
-            msg.reply_to_message?.caption
-          ).replace(/\n/g, "<br/>");
-          if (replyToMessage) {
-            generateUnsplashImage(messageToQuote, replyToMessage.from)
-              .then((buffer) => {
-                const fileOptions = {
-                  filename: "image.png",
-                  contentType: "image/png",
-                };
-                bot.sendPhoto(
-                  chatId,
-                  buffer,
-                  { reply_to_message_id: msg.message_id },
-                  fileOptions,
-                );
-              })
-              .catch((err) => {
-                console.error(error);
-              });
-          }
-          break;
-        case "/delete":
-          const deleteMsg = async () => {
-            try {
-              bot.deleteMessage(chatId, msg.message_id);
-              bot.deleteMessage(chatId, msg.reply_to_message?.message_id);
-            } catch (err) {
-              console.error(err);
-            }
-          };
-          if (msg?.from.id == process.env.STICKER_OWNER) deleteMsg();
+							const userName = userReaction?.user_first_name;
 
-          break;
-        case "/no":
-          axios.get("https://naas.isalman.dev/no").then((response) => {
-            handleResponse(
-              response.data.reason,
-              msg,
-              chatId,
-              myCache,
-              bot,
-              null,
-            ).catch((err) => {
-              console.error(err);
-            });
-          });
-          break;
-        case "/forecast":
-          {
-            const userInput = text.split(" ").slice(1).join(" ");
+							leaderboard.push({
+								userId,
+								userName,
+								total_reactions: user.total_reactions,
+								top_emoji: topEmojiStr,
+								top_emoji_count: emojiCount,
+							});
+						}
 
-            const dayIndex = extractDayOffset(userInput);
-            const location = extractLocation(userInput);
-            getForecastDay(location, dayIndex)
-              .then(async (weatherData) => {
-                handleResponse(
-                  weatherData,
-                  msg,
-                  chatId,
-                  myCache,
-                  bot,
-                  null,
-                ).catch((err) => {
-                  console.error(err);
-                });
-              })
-              .catch((err) => {
-                console.error(err);
-              });
-          }
-          break;
-        case "/weather":
-          const location = text.split(" ").slice(1).join(" ");
+						let leaderboardText = ``;
+						leaderboardText += "```\n";
+						leaderboardText += "Rank | Name         | React | Top Emoji\n";
+						leaderboardText += "----------------------------------------\n";
 
-          getWeather(location)
-            .then(async (weatherData) => {
-              handleResponse(
-                weatherData,
-                msg,
-                chatId,
-                myCache,
-                bot,
-                null,
-              ).catch((err) => {
-                console.error(err);
-              });
-            })
-            .catch((err) => {
-              console.error(err);
-            });
-          break;
-        case "/processPoll":
-          bot.sendMessage(
-            msg.chat.id,
-            `I am connected to: ${bot.options.baseApiUrl}`,
-          );
-          break;
+						leaderboard.forEach((user, index) => {
+							const rank = String(index + 1).padEnd(4);
+							const name = user.userName.slice(0, 12).padEnd(12);
+							const reactions = String(user.total_reactions).padEnd(5);
+							const topEmoji = `${user.top_emoji} (${user.top_emoji_count})`;
 
-        case "/invite":
-          const invite = text.split(" ").slice(1).join(" ");
-          sendPoll(
-            db,
-            msg.chat.id,
-            `Invite ${invite} to the chat?`,
-            [{ text: "Yes" }, { text: "No" }],
-            false,
-          );
-          break;
-        case "/voteban":
-          const victim = text.split(" ").slice(1).join(" ");
-          sendPoll(
-            db,
-            msg.chat.id,
-            `Ban ${victim}?`,
-            [{ text: "Yes" }, { text: "No" }],
-            true,
-          );
-          break;
+							leaderboardText += `${rank} | ${name} | ${reactions} | ${topEmoji}\n`;
+						});
 
-        case "/cis":
-        case "/trans":
-          let textMsg = text.split(" ").slice(1).join(" ");
-          let languageInfo = textMsg.split(" ")[0];
-          if (languageInfo.includes(":")) {
-            textMsg = text.split(" ").slice(2).join(" ");
-          } else {
-            languageInfo = null;
-          }
-          const translateString =
-            (textMsg.trim().length
-              ? textMsg
-              : msg.quote?.text ||
-                msg.reply_to_message?.text ||
-                msg.reply_to_message?.caption) || "";
+						leaderboardText += "```";
 
-          translateShell(translateString.replace(/['"]/g, "\\$&"), languageInfo)
-            .then(async (response) => {
-              if (response.length == 0) {
-                bot.sendMessage();
-              }
-              handleResponse(
-                response
-                  .replace(ansiEscapeRegex, "")
-                  .replace(/\n\s*\n/g, "\n")
-                  .trim(),
-                msg,
-                chatId,
-                myCache,
-                bot,
-                "pre",
-              ).catch((err) => {
-                console.error(err);
-              });
-            })
-            .catch((err) => {
-              console.error(err);
-            });
-          break;
-        case "/when":
-          let reply = `Date: ${new Date(msg.reply_to_message.date * 1000).toUTCString()}`;
-          if (msg.reply_to_message.forward_date) {
-            reply += `\nOriginal date: ${new Date(msg.reply_to_message.forward_date * 1000).toUTCString()}`;
-          }
-          handleResponse(reply, msg, chatId, myCache, bot).catch((err) => {
-            console.error(err);
-          });
-          break;
-        case "/removebg":
-        case "/rmbg":
-        case "/deletesticker":
-          if (
-            !(
-              (await getAdminsIds(chatId)).includes(msg.from.id) ||
-              msg.from.id == process.env.STICKER_OWNER
-            ) &&
-            msg.chat.type != "private"
-          ) {
-            await bot.sendMessage(msg.chat.id, "no, ur not my dad");
-            return;
-          }
+						await bot.sendMessage(chatId, leaderboardText, {
+							reply_to_message_id: msg.message_id,
+							parse_mode: "MarkdownV2",
+						});
+					} catch (error) {
+						console.error("Error fetching reaction stats:", error);
+					}
+					break;
+				case "/removebg":
+				case "/rmbg":
+				case "/deletesticker":
+					if (!((await getAdminsIds(chatId)).includes(msg.from.id) || msg.from.id == process.env.STICKER_OWNER) && msg.chat.type != "private") {
+						await bot.sendMessage(msg.chat.id, "no, ur not my dad");
+						return;
+					}
 
-          if (msg.reply_to_message?.sticker) {
-            if (
-              !msg.reply_to_message?.sticker?.set_name.includes(
-                chatId.toString().slice(4),
-              ) &&
-              msg.chat.type != "private"
-            ) {
-              await bot.sendMessage(msg.chat.id, "no, wtf");
-              return;
-            }
-            bot
-              .deleteStickerFromSet(msg.reply_to_message?.sticker?.file_id)
-              .then(() => {
-                bot
-                  .sendMessage(chatId, "Sticker deleted")
-                  .then((message) => {});
-              });
-          }
-          break;
-        case "/addsubtitles":
-          const language = text.split(" ").slice(1).join(" ") || "en";
-          if (
-            msg.reply_to_message &&
-            (msg.reply_to_message.video || msg.reply_to_message.document)
-          ) {
-            const file = await bot.getFile(
-              msg.reply_to_message.video
-                ? msg.reply_to_message.video.file_id
-                : msg.reply_to_message.document.file_id,
-            );
-            withBurnedSubtitles(
-              file.file_path,
-              async ({ outputVideoPath }) => {
-                await bot.sendVideo(
-                  chatId,
-                  outputVideoPath,
-                  { reply_to_message_id: msg.message_id },
-                  { filename: "video.mp4", contentType: "video/mp4" },
-                );
-                return;
-              },
-              { language },
-            );
-          }
-          break;
+					if (msg.reply_to_message?.sticker) {
+						if (!msg.reply_to_message?.sticker?.set_name.includes(chatId.toString().slice(4)) && msg.chat.type != "private") {
+							await bot.sendMessage(msg.chat.id, "no, wtf");
+							return;
+						}
+						bot.deleteStickerFromSet(msg.reply_to_message?.sticker?.file_id).then(() => {
+							bot.sendMessage(chatId, "Sticker deleted").then((message) => {});
+						});
+					}
+					break;
+				case "/addsubtitles":
+					const language = text.split(" ").slice(1).join(" ") || "en";
+					if (msg.reply_to_message && (msg.reply_to_message.video || msg.reply_to_message.document)) {
+						const file = await bot.getFile(msg.reply_to_message.video ? msg.reply_to_message.video.file_id : msg.reply_to_message.document.file_id);
+						withBurnedSubtitles(
+							file.file_path,
+							async ({ outputVideoPath }) => {
+								await bot.sendVideo(chatId, outputVideoPath, { reply_to_message_id: msg.message_id }, { filename: "video.mp4", contentType: "video/mp4" });
+								return;
+							},
+							{ language },
+						);
+					}
+					break;
 
-        case "/cut": {
-          const args = text.split(" ").slice(1);
-          if (args.length < 2) {
-            handleResponse(
-              "Usage: /cut <start> <end> (reply to a video). Times can be seconds (e.g., 5) or HH:MM:SS (e.g., 00:01:30).",
-              msg,
-              chatId,
-              myCache,
-              bot,
-              null,
-            ).catch((err) => {
-              console.error(err);
-            });
-            break;
-          }
-          const [start, end] = args;
-          if (
-            msg.reply_to_message &&
-            (msg.reply_to_message.video || msg.reply_to_message.document)
-          ) {
-            const file = await bot.getFile(
-              msg.reply_to_message.video
-                ? msg.reply_to_message.video.file_id
-                : msg.reply_to_message.document.file_id,
-            );
-            cutVideo(
-              file.file_path,
-              start,
-              end,
-              async ({ outputVideoPath }) => {
-                await bot.sendVideo(
-                  chatId,
-                  outputVideoPath,
-                  { reply_to_message_id: msg.message_id },
-                  { filename: "cut.mp4", contentType: "video/mp4" },
-                );
-                return;
-              },
-            );
-          }
-          break;
-        }
+				case "/cut": {
+					const args = text.split(" ").slice(1);
+					if (args.length < 2) {
+						handleResponse(
+							"Usage: /cut <start> <end> (reply to a video). Times can be seconds (e.g., 5) or HH:MM:SS (e.g., 00:01:30).",
+							msg,
+							chatId,
+							myCache,
+							bot,
+							null,
+						).catch((err) => {
+							console.error(err);
+						});
+						break;
+					}
+					const [start, end] = args;
+					if (msg.reply_to_message && (msg.reply_to_message.video || msg.reply_to_message.document)) {
+						const file = await bot.getFile(msg.reply_to_message.video ? msg.reply_to_message.video.file_id : msg.reply_to_message.document.file_id);
+						cutVideo(file.file_path, start, end, async ({ outputVideoPath }) => {
+							await bot.sendVideo(chatId, outputVideoPath, { reply_to_message_id: msg.message_id }, { filename: "cut.mp4", contentType: "video/mp4" });
+							return;
+						});
+					}
+					break;
+				}
 
-        case "/createsticker":
-        case "/addsticker":
-          if (
-            msg.reply_to_message &&
-            (msg.reply_to_message.photo ||
-              msg.reply_to_message.sticker ||
-              msg.reply_to_message.document)
-          ) {
-            let emojis = msg.text
-              .split(" ")
-              .slice(1)
-              .join(" ")
-              .replace(/\s+/g, "");
-            if (emojis.trim().length === 0) {
-              emojis = "🍉";
-            }
-            const photoArray = msg.reply_to_message.photo;
-            const highestQualityPhoto = photoArray
-              ? photoArray[photoArray.length - 1]
-              : msg.reply_to_message.sticker || msg.reply_to_message.document;
-            bot.getFile(highestQualityPhoto.file_id).then(async (file) => {
-              const arrayBuffer = fs.readFileSync(file.file_path);
-              const imageBuffer = Buffer.from(arrayBuffer);
-              const resizedImage = await resizeImageBuffer(imageBuffer);
-              const stickerPackName = `hummus${chatId.toString().slice(4)}_by_${process.env.BOT_USERNAME}`;
-              bot
-                .addStickerToSet(
-                  process.env.STICKER_OWNER,
-                  stickerPackName,
-                  resizedImage,
-                  emojis,
-                )
-                .then(() => {
-                  handleResponse(
-                    `<a href="t.me/addstickers/${stickerPackName}"> Done </a>`,
-                    msg,
-                    chatId,
-                    myCache,
-                    bot,
-                    null,
-                  )
-                    .then((message) => {})
-                    .catch((err) => {
-                      console.error(err);
-                    });
-                })
-                .catch((err) => {
-                  bot
-                    .createNewStickerSet(
-                      process.env.STICKER_OWNER,
-                      stickerPackName,
-                      `${msg.chat.title}'s Stickers`,
-                      resizedImage,
-                      emojis,
-                    )
-                    .then(() => {
-                      bot.setChatStickerSet(chatId, stickerPackName);
-                      handleResponse(
-                        `New sticker pack created t.me/addstickers/${stickerPackName}`,
-                        msg,
-                        chatId,
-                        myCache,
-                        bot,
-                        null,
-                      ).catch((err) => {
-                        console.error(err);
-                      });
-                    })
-                    .catch((err) => {
-                      console.error(err);
-                    });
-                });
-            });
-          }
-          break;
+				case "/createsticker":
+				case "/addsticker":
+					if (msg.reply_to_message && (msg.reply_to_message.photo || msg.reply_to_message.sticker || msg.reply_to_message.document)) {
+						let emojis = msg.text.split(" ").slice(1).join(" ").replace(/\s+/g, "");
+						if (emojis.trim().length === 0) {
+							emojis = "🍉";
+						}
+						const photoArray = msg.reply_to_message.photo;
+						const highestQualityPhoto = photoArray ? photoArray[photoArray.length - 1] : msg.reply_to_message.sticker || msg.reply_to_message.document;
+						bot.getFile(highestQualityPhoto.file_id).then(async (file) => {
+							const arrayBuffer = fs.readFileSync(file.file_path);
+							const imageBuffer = Buffer.from(arrayBuffer);
+							const resizedImage = await resizeImageBuffer(imageBuffer);
+							const stickerPackName = `hummus${chatId.toString().slice(4)}_by_${process.env.BOT_USERNAME}`;
+							bot
+								.addStickerToSet(process.env.STICKER_OWNER, stickerPackName, resizedImage, emojis)
+								.then(() => {
+									handleResponse(`<a href="t.me/addstickers/${stickerPackName}"> Done </a>`, msg, chatId, myCache, bot, null)
+										.then((message) => {})
+										.catch((err) => {
+											console.error(err);
+										});
+								})
+								.catch((err) => {
+									bot
+										.createNewStickerSet(process.env.STICKER_OWNER, stickerPackName, `${msg.chat.title}'s Stickers`, resizedImage, emojis)
+										.then(() => {
+											bot.setChatStickerSet(chatId, stickerPackName);
+											handleResponse(`New sticker pack created t.me/addstickers/${stickerPackName}`, msg, chatId, myCache, bot, null).catch((err) => {
+												console.error(err);
+											});
+										})
+										.catch((err) => {
+											console.error(err);
+										});
+								});
+						});
+					}
+					break;
 
-        case "/addtoglossary":
-          const glossaryCollection = db.collection("glossary");
-          const args = msg.text.split(" ").slice(1).join(" ").split(":");
-          if (args.length != 2) {
-            handleResponse(
-              "Wrong format, should be /addGlossary word : definition. You can edit your message with the correction.",
-              msg,
-              chatId,
-              myCache,
-              bot,
-              null,
-            ).catch((err) => {
-              console.error(err);
-            });
-          } else {
-            const word = args[0];
-            const definition = args[1];
-            const elementId = (Math.random() + 1).toString(36).substring(7);
-            const document = {
-              word,
-              definition,
-              author: msg.from.id,
-              chatId,
-              id: elementId,
-            };
+				case "/addtoglossary":
+					const glossaryCollection = db.collection("glossary");
+					const args = msg.text.split(" ").slice(1).join(" ").split(":");
+					if (args.length != 2) {
+						handleResponse(
+							"Wrong format, should be /addGlossary word : definition. You can edit your message with the correction.",
+							msg,
+							chatId,
+							myCache,
+							bot,
+							null,
+						).catch((err) => {
+							console.error(err);
+						});
+					} else {
+						const word = args[0];
+						const definition = args[1];
+						const elementId = (Math.random() + 1).toString(36).substring(7);
+						const document = {
+							word,
+							definition,
+							author: msg.from.id,
+							chatId,
+							id: elementId,
+						};
 
-            glossaryCollection.insertOne(document).then(() => {
-              handleResponse("Saved.", msg, chatId, myCache, bot, null).catch(
-                (err) => {
-                  console.error(err);
-                },
-              );
-            });
-          }
-          break;
-        case "/deleteFromGlossary":
-          const isAdmin = (await getAdminsIds(chatId)).includes(msg.from.id);
-          const wordToDeleteId = msg.text.split(" ").slice(1).join(" ");
-          if (isAdmin) {
-            db.collection("glossary")
-              .deleteOne({ id: wordToDeleteId })
-              .then(() => {
-                handleResponse("Done.", msg, chatId, myCache, bot, null).catch(
-                  (err) => {
-                    console.error(err);
-                  },
-                );
-              });
-          } else {
-            db.collection("glossary")
-              .deleteOne({ id: wordToDeleteId, author: msg.text.id })
-              .then((doc) => {
-                if (doc.deletedCount) {
-                  handleResponse(
-                    "Done.",
-                    msg,
-                    chatId,
-                    myCache,
-                    bot,
-                    null,
-                  ).catch((err) => {
-                    console.error(err);
-                  });
-                } else {
-                  handleResponse(
-                    "Nothing has been deleted, either the command is wrong or you're trying to delete a word someone else added while not being an admin. (You can just edit your message if it's the former case.)",
-                    msg,
-                    chatId,
-                    myCache,
-                    bot,
-                    null,
-                  ).catch((err) => {
-                    console.error(err);
-                  });
-                }
-              });
-          }
-          break;
+						glossaryCollection.insertOne(document).then(() => {
+							handleResponse("Saved.", msg, chatId, myCache, bot, null).catch((err) => {
+								console.error(err);
+							});
+						});
+					}
+					break;
+				case "/deleteFromGlossary":
+					const isAdmin = (await getAdminsIds(chatId)).includes(msg.from.id);
+					const wordToDeleteId = msg.text.split(" ").slice(1).join(" ");
+					if (isAdmin) {
+						db.collection("glossary")
+							.deleteOne({ id: wordToDeleteId })
+							.then(() => {
+								handleResponse("Done.", msg, chatId, myCache, bot, null).catch((err) => {
+									console.error(err);
+								});
+							});
+					} else {
+						db.collection("glossary")
+							.deleteOne({ id: wordToDeleteId, author: msg.text.id })
+							.then((doc) => {
+								if (doc.deletedCount) {
+									handleResponse("Done.", msg, chatId, myCache, bot, null).catch((err) => {
+										console.error(err);
+									});
+								} else {
+									handleResponse(
+										"Nothing has been deleted, either the command is wrong or you're trying to delete a word someone else added while not being an admin. (You can just edit your message if it's the former case.)",
+										msg,
+										chatId,
+										myCache,
+										bot,
+										null,
+									).catch((err) => {
+										console.error(err);
+									});
+								}
+							});
+					}
+					break;
 
-        case "/glossary":
-          const query = msg.text.split(" ").slice(1).join(" ");
-          db.collection("glossary")
-            .aggregate([
-              {
-                $match: {
-                  word: {
-                    $regex: new RegExp(query, "i"),
-                  },
-                  chatId,
-                },
-              },
-              {
-                $limit: 10,
-              },
-            ])
-            .toArray()
-            .then(async (results) => {
-              let textOutput = "";
+				case "/glossary":
+					const query = msg.text.split(" ").slice(1).join(" ");
+					db.collection("glossary")
+						.aggregate([
+							{
+								$match: {
+									word: {
+										$regex: new RegExp(query, "i"),
+									},
+									chatId,
+								},
+							},
+							{
+								$limit: 10,
+							},
+						])
+						.toArray()
+						.then(async (results) => {
+							let textOutput = "";
 
-              if (results.length) {
-                textOutput = "<b>Results:</b>\n\n";
-                for (let element of results) {
-                  const author = (
-                    await bot.getChatMember(chatId, element.author)
-                  ).user;
-                  textOutput += `<b>${element.word}</b>\n`;
-                  textOutput += `Definition: ${element.definition}\n`;
-                  textOutput += `Contributed by: <i>${[author.first_name, author.last_name].join(" ").trim()}</i>\n\n`;
-                  textOutput += `Delete command <code>/deleteFromGlossary ${element.id}</code>\n\n`;
-                }
-              } else {
-                textOutput = "No results found.";
-              }
-              handleResponse(textOutput, msg, chatId, myCache, bot, null).catch(
-                (err) => {
-                  console.error(err);
-                },
-              );
-            });
-          break;
-        case "/count":
-          const countRegex = msg.text.split(" ").slice(1)?.join(" ");
-          countSenders(db.collection("messages"), chatId, countRegex)
-            .then((results) => {
-              let textOutput = results
-                .map((element) => {
-                  return `${element._id}: ${element.count} ${element.count == 1 ? "time" : "times"}`;
-                })
-                .join("\n");
-              if (textOutput.trim().length == 0) {
-                textOutput = "No results found";
-              } else {
-                textOutput = "Results : \n" + textOutput;
-              }
-              handleResponse(
-                `<blockquote expandable>${textOutput}</blockquote>`,
-                msg,
-                chatId,
-                myCache,
-                bot,
-                null,
-              )
-                .then((message) => {})
-                .catch((err) => {
-                  console.error(err);
-                });
-            })
-            .catch((err) => {
-              console.error(err);
-            });
-          break;
-        case "/regex":
-          const regex = msg.text.split(" ").slice(1)?.join(" ");
-          findSimilarMessages(db.collection("messages"), chatId, regex)
-            .then((results) => {
-              let textOutput = results
-                .map((element) => {
-                  return `<a href="https://t.me/c/${element.chatId.toString().slice(4)}/${element.messageId}"> ${element.sender}: ${element.text.length > 20 ? element.text.slice(0, 20) + "..." : element.text}</a>`;
-                })
-                .join("\n");
-              if (textOutput.trim().length == 0) {
-                textOutput = "No results found";
-              } else {
-                textOutput =
-                  "<blockquote expandable>Results : \n" +
-                  textOutput +
-                  "</blockquote>";
-              }
-              handleResponse(textOutput, msg, chatId, myCache, bot, null).catch(
-                (err) => {
-                  console.error(err);
-                },
-              );
-            })
-            .catch((err) => {
-              consol.error(err);
-            });
-          break;
+							if (results.length) {
+								textOutput = "<b>Results:</b>\n\n";
+								for (let element of results) {
+									const author = (await bot.getChatMember(chatId, element.author)).user;
+									textOutput += `<b>${element.word}</b>\n`;
+									textOutput += `Definition: ${element.definition}\n`;
+									textOutput += `Contributed by: <i>${[author.first_name, author.last_name].join(" ").trim()}</i>\n\n`;
+									textOutput += `Delete command <code>/deleteFromGlossary ${element.id}</code>\n\n`;
+								}
+							} else {
+								textOutput = "No results found.";
+							}
+							handleResponse(textOutput, msg, chatId, myCache, bot, null).catch((err) => {
+								console.error(err);
+							});
+						});
+					break;
+				case "/count":
+					const countRegex = msg.text.split(" ").slice(1)?.join(" ");
+					countSenders(db.collection("messages"), chatId, countRegex)
+						.then((results) => {
+							let textOutput = results
+								.map((element) => {
+									return `${element._id}: ${element.count} ${element.count == 1 ? "time" : "times"}`;
+								})
+								.join("\n");
+							if (textOutput.trim().length == 0) {
+								textOutput = "No results found";
+							} else {
+								textOutput = "Results : \n" + textOutput;
+							}
+							handleResponse(`<blockquote expandable>${textOutput}</blockquote>`, msg, chatId, myCache, bot, null)
+								.then((message) => {})
+								.catch((err) => {
+									console.error(err);
+								});
+						})
+						.catch((err) => {
+							console.error(err);
+						});
+					break;
+				case "/wordcount":
+					let limit = 10;
+					wordCountLeaderboard(db.collection("messages"), chatId, limit)
+						.then((results) => {
+							let textOutput = results
+								.map((element) => {
+									return `${element._id}: ${element.totalWords} words (${element.messageCount} messages)`;
+								})
+								.join("\n");
+							if (textOutput.trim().length == 0) {
+								textOutput = "no results found";
+							} else {
+								textOutput = "Word count:\n" + textOutput;
+							}
+							handleResponse(`<blockquote expandable>${textOutput}</blockquote>`, msg, chatId, myCache, bot, null)
+								.then((message) => {})
+								.catch((err) => {
+									console.error(err);
+								});
+						})
+						.catch((err) => {
+							console.error(err);
+						});
+					break;
+				case "/regex":
+					const regex = msg.text.split(" ").slice(1)?.join(" ");
+					findSimilarMessages(db.collection("messages"), chatId, regex)
+						.then((results) => {
+							let textOutput = results
+								.map((element) => {
+									return `<a href="https://t.me/c/${element.chatId.toString().slice(4)}/${element.messageId}"> ${element.sender}: ${element.text.length > 20 ? element.text.slice(0, 20) + "..." : element.text}</a>`;
+								})
+								.join("\n");
+							if (textOutput.trim().length == 0) {
+								textOutput = "No results found";
+							} else {
+								textOutput = "<blockquote expandable>Results : \n" + textOutput + "</blockquote>";
+							}
+							handleResponse(textOutput, msg, chatId, myCache, bot, null).catch((err) => {
+								console.error(err);
+							});
+						})
+						.catch((err) => {
+							consol.error(err);
+						});
+					break;
 
-        case "/archive":
-          const articleURL =
-            extractUrl(msg?.reply_to_message?.text) || extractUrl(msg.text);
-          if (articleURL) {
-            findDirectArchiveLink(articleURL)
-              .then((url) => {
-                handleResponse(url, msg, chatId, myCache, bot, null).catch(
-                  (err) => {
-                    console.error(err);
-                  },
-                );
-              })
-              .catch((err) => {
-                console.error(err);
-                handleResponse(
-                  "Failed to get archive link.",
-                  msg,
-                  chatId,
-                  myCache,
-                  bot,
-                  null,
-                );
-              });
-          } else {
-            handleResponse(
-              "No URL found. Reply to a message with a URL or use /archive <url>",
-              msg,
-              chatId,
-              myCache,
-              bot,
-              null,
-            );
-          }
-          break;
+				case "/archive":
+					const articleURL = extractUrl(msg?.reply_to_message?.text) || extractUrl(msg.text);
+					if (articleURL) {
+						findDirectArchiveLink(articleURL)
+							.then((url) => {
+								handleResponse(url, msg, chatId, myCache, bot, null).catch((err) => {
+									console.error(err);
+								});
+							})
+							.catch((err) => {
+								console.error(err);
+								handleResponse("Failed to get archive link.", msg, chatId, myCache, bot, null);
+							});
+					} else {
+						handleResponse("No URL found. Reply to a message with a URL or use /archive <url>", msg, chatId, myCache, bot, null);
+					}
+					break;
 
-        case "/summarize":
-          const fullContext = [
-            msg?.reply_to_message?.text?.toString(),
-            msg.text?.toString(),
-          ]
-            .filter((element) => element)
-            .join("");
-          const summaryUrl = extractUrl(fullContext);
-          console.log(summaryUrl);
-          if (summaryUrl) {
-            summarizeUrl(summaryUrl)
-              .then((summary) => {
-                handleResponse(
-                  `Not an LLM summary, lower your expectations <blockquote expandable>${summary}</blockquote>`,
-                  msg,
-                  chatId,
-                  myCache,
-                  bot,
-                  null,
-                ).catch((err) => {
-                  console.error(err);
-                });
-              })
-              .catch((err) => {
-                console.log(summarizeUrl);
-                handleResponse(
-                  "failed to summarize URL, probably ran out of memory lel, get me a bigger server ty.",
-                  msg,
-                  chatId,
-                  myCache,
-                  bot,
-                  null,
-                );
-              });
-          } else {
-            handleResponse(
-              "No URL found. Reply to a message with a URL or use /summarize <url>",
-              msg,
-              chatId,
-              myCache,
-              bot,
-              null,
-            );
-          }
-          break;
-        /* 				case "/tarot1":
+				case "/summarize":
+					const fullContext = [msg?.reply_to_message?.text?.toString(), msg.text?.toString()].filter((element) => element).join("");
+					const summaryUrl = extractUrl(fullContext);
+					console.log(summaryUrl);
+					if (summaryUrl) {
+						summarizeUrl(summaryUrl)
+							.then((summary) => {
+								handleResponse(
+									`Not an LLM summary, lower your expectations <blockquote expandable>${summary}</blockquote>`,
+									msg,
+									chatId,
+									myCache,
+									bot,
+									null,
+								).catch((err) => {
+									console.error(err);
+								});
+							})
+							.catch((err) => {
+								console.log(summarizeUrl);
+								handleResponse("failed to summarize URL, probably ran out of memory lel, get me a bigger server ty.", msg, chatId, myCache, bot, null);
+							});
+					} else {
+						handleResponse("No URL found. Reply to a message with a URL or use /summarize <url>", msg, chatId, myCache, bot, null);
+					}
+					break;
+				/* 				case "/tarot1":
 				case "/tarot3":
 				case "/tarot10":
 					const cardsToDraw = Number(msg.text.split("tarot")[1]) || 3;
@@ -1630,122 +1457,82 @@ Here are the commands you can use:
 					fs.unlinkSync(slideshowPath);
 
 					break; */
-        case "/musicstats":
-          const stats = await getMusicStats(musicCollection, msg.chat.id);
-          await bot.sendMessage(
-            msg.chat.id,
-            `<blockquote expandable>${stats}</blockquote>`,
-            {
-              parse_mode: "HTML",
-            },
-          );
-          break;
-        case "/clock": {
-          const location = text.split(" ").slice(1).join(" ");
-          const timeZone = findTimezones(location)[0];
-          if (!timeZone) {
-            handleResponse(
-              `no timezone found for "${location}"`,
-              msg,
-              chatId,
-              myCache,
-              bot,
-              "pre",
-            ).catch((err) => {
-              console.error(err);
-            });
-            return;
-          }
-          const time = getTimeAtLocation(timeZone);
-          handleResponse(
-            `Time in ${timeZone}: ${time}`,
-            msg,
-            chatId,
-            myCache,
-            bot,
-            "pre",
-          ).catch((err) => {
-            console.error(err);
-          });
-          break;
-        }
+				case "/musicstats":
+					const stats = await getMusicStats(musicCollection, msg.chat.id);
+					await bot.sendMessage(msg.chat.id, `<blockquote expandable>${stats}</blockquote>`, {
+						parse_mode: "HTML",
+					});
+					break;
+				case "/clock": {
+					const location = text.split(" ").slice(1).join(" ");
+					const timeZone = findTimezones(location)[0];
+					if (!timeZone) {
+						handleResponse(`no timezone found for "${location}"`, msg, chatId, myCache, bot, "pre").catch((err) => {
+							console.error(err);
+						});
+						return;
+					}
+					const time = getTimeAtLocation(timeZone);
+					handleResponse(`Time in ${timeZone}: ${time}`, msg, chatId, myCache, bot, "pre").catch((err) => {
+						console.error(err);
+					});
+					break;
+				}
 
-        case "/findalbum":
-          if (msg.reply_to_message.audio) {
-            const audio = msg.reply_to_message.audio;
-            const fullMusicName = `${audio.performer} - ${audio.title}`;
-            const output = await getAlbumFromSong(fullMusicName);
-            await bot.sendMessage(
-              msg.chat.id,
-              `<a href="${output.albumLink}">${output.name}</a>`,
-              { parse_mode: "HTML", reply_to_message_id: msg.messageId },
-            );
-          }
-          break;
+				case "/findalbum":
+					if (msg.reply_to_message.audio) {
+						const audio = msg.reply_to_message.audio;
+						const fullMusicName = `${audio.performer} - ${audio.title}`;
+						const output = await getAlbumFromSong(fullMusicName);
+						await bot.sendMessage(msg.chat.id, `<a href="${output.albumLink}">${output.name}</a>`, { parse_mode: "HTML", reply_to_message_id: msg.messageId });
+					}
+					break;
 
-        case "/news":
-          let city = text.split(" ").slice(1).join(" ");
-          const news = await getLocalNews(city);
-          handleResponse(news, msg, chatId, myCache, bot, null, true).catch(
-            (e) => {
-              console.error(e);
-            },
-          );
-          break;
-        case "/quran":
-          const verseData = await getRandomQuranVerse();
-          handleResponse(verseData, msg, chatId, myCache, bot, null).catch(
-            (e) => {
-              console.error(e);
-            },
-          );
-          break;
-        case "/bible":
-          const bibleDB = client.db("bible");
-          const verse = await bibleDB
-            .collection("verses")
-            .aggregate([
-              { $match: { translation: "KJV" } },
-              { $sample: { size: 1 } },
-            ])
-            .toArray();
+				case "/news":
+					let city = text.split(" ").slice(1).join(" ");
+					const news = await getLocalNews(city);
+					handleResponse(news, msg, chatId, myCache, bot, null, true).catch((e) => {
+						console.error(e);
+					});
+					break;
+				case "/quran":
+					const verseData = await getRandomQuranVerse();
+					handleResponse(verseData, msg, chatId, myCache, bot, null).catch((e) => {
+						console.error(e);
+					});
+					break;
+				case "/bible":
+					const bibleDB = client.db("bible");
+					const verse = await bibleDB
+						.collection("verses")
+						.aggregate([{ $match: { translation: "KJV" } }, { $sample: { size: 1 } }])
+						.toArray();
 
-          const v = verse[0];
+					const v = verse[0];
 
-          const verseText = `${v.book} ${v.chapter}:${v.verse}\n${v.text}`;
-          handleResponse(
-            `<blockquote expandable>${verseText} </blockquote>`,
-            msg,
-            chatId,
-            myCache,
-            bot,
-            null,
-          ).catch((e) => {
-            console.error(e);
-          });
-          break;
-        case "/tarot1":
-        case "/tarot3":
-        case "/tarot10":
-          if (msg.chat.type !== "private") return;
-          const cardsToDraw = Number(msg.text.split("tarot")[1]) || 3;
-          const userQuestion = msg.text.split(" ").splice(1).join(" ");
-          const { slideshowPath, reading, imagePaths } =
-            await getReading(cardsToDraw);
-          const fileOptions = {
-            filename: "video.mp4",
-            contentType: "video/mp4",
-          };
+					const verseText = `${v.book} ${v.chapter}:${v.verse}\n${v.text}`;
+					handleResponse(`<blockquote expandable>${verseText} </blockquote>`, msg, chatId, myCache, bot, null).catch((e) => {
+						console.error(e);
+					});
+					break;
+				case "/tarot1":
+				case "/tarot3":
+				case "/tarot10":
+					if (msg.chat.type !== "private") return;
+					const cardsToDraw = Number(msg.text.split("tarot")[1]) || 3;
+					const userQuestion = msg.text.split(" ").splice(1).join(" ");
+					const { slideshowPath, reading, imagePaths } = await getReading(cardsToDraw);
+					const fileOptions = {
+						filename: "video.mp4",
+						contentType: "video/mp4",
+					};
 
-          const lastReading = await getLastTarotReading(
-            msg.from.id,
-            msg.chat.id,
-          );
-          const lastReadingContext = lastReading
-            ? `\n\nFor context, their last reading was on ${lastReading.date.toDateString()} with the cards: ${lastReading.cards.join(", ")}. ${lastReading.question ? `They asked: "${lastReading.question}".` : ""} The interpretation was: "${lastReading.interpretation}"`
-            : "";
+					const lastReading = await getLastTarotReading(msg.from.id, msg.chat.id);
+					const lastReadingContext = lastReading
+						? `\n\nFor context, their last reading was on ${lastReading.date.toDateString()} with the cards: ${lastReading.cards.join(", ")}. ${lastReading.question ? `They asked: "${lastReading.question}".` : ""} The interpretation was: "${lastReading.interpretation}"`
+						: "";
 
-          const llmRequest = `
+					const llmRequest = `
 				Generate a tarot reading for ${[msg.from.first_name, msg.from.last_name].join(" ").trim()} (@${msg.from.username}) based on these cards: ${reading.join(",")}.
 				${userQuestion.trim().length > 0 ? `The reading should address this specific question: "${userQuestion}"` : ""}${lastReadingContext}
 
@@ -1763,131 +1550,63 @@ Here are the commands you can use:
 				You may use only the following HTML tags in your output: <b>, <strong>, <i>, <em>, <u>, <ins>, <s>, <strike>, <del>, <span class="tg-spoiler">, <tg-spoiler>, <a>, <tg-emoji>, <code>, <pre>, and <blockquote> (including the expandable attribute).
 				${lastReading ? "- Reference or acknowledge the previous reading if relevant to the current cards" : ""}
 				`;
-          const tarotMessage = await bot.sendMessage(
-            msg.chat.id,
-            reading.join("\n") +
-              `\n<blockquote expandable>One sec...</blockquote>`,
-            {
-              parse_mode: "HTML",
-            },
-          );
+					const tarotMessage = await bot.sendMessage(msg.chat.id, reading.join("\n") + `\n<blockquote expandable>One sec...</blockquote>`, {
+						parse_mode: "HTML",
+					});
 
-          const interpretation = sanitizeTelegramHtml(
-            await sendSimpleRequestToDeepSeek(llmRequest),
-          );
-          await storeTarotReadingInDB(
-            msg.from.id,
-            msg.chat.id,
-            reading,
-            interpretation,
-            userQuestion,
-          );
-          const interpretationMessageBlocks =
-            createMessageBlocks(interpretation);
-          await bot.editMessageText(
-            reading.join("\n") +
-              `\n<blockquote expandable>${interpretationMessageBlocks[0]}</blockquote>`,
-            {
-              parse_mode: "HTML",
-              message_id: tarotMessage.message_id,
-              chat_id: msg.chat.id,
-            },
-          );
-          if (interpretationMessageBlocks.length > 2) {
-            for (let i = 1; i < interpretationMessageBlocks.length; i++) {
-              await bot.sendMessage(
-                chatId,
-                `\n<blockquote expandable> ${interpretationMessageBlocks[i]}</blockquote>`,
-              );
-            }
-          }
-          break;
-        case "/auslan":
-          const auslanText =
-            text.split(" ").slice(1).join(" ") ||
-            msg.reply_to_message?.text ||
-            "";
-          if (auslanText.trim().length == 0) {
-            handleResponse(
-              "usage: /auslan <word>",
-              msg,
-              chatId,
-              myCache,
-              bot,
-              null,
-            ).catch((err) => {
-              console.error(err);
-            });
-            return;
-          }
-          const mediaUrl = await findAuslanSignVideoLink(auslanText);
-          if (mediaUrl) {
-            bot.sendVideo(
-              chatId,
-              mediaUrl,
-              { reply_to_message_id: msg.message_id },
-              { filename: "auslan.mp4", contentType: "video/mp4" },
-            );
-          }
-          break;
-        case "/latex":
-          const latexInput =
-            text.split(" ").slice(1).join(" ") ||
-            msg.reply_to_message?.text ||
-            "";
-          if (latexInput.trim().length == 0) {
-            handleResponse(
-              "usage: /latex <latex code>",
-              msg,
-              chatId,
-              myCache,
-              bot,
-              null,
-            ).catch((err) => {
-              console.error(err);
-            });
-            return;
-          }
-          const buffer = await renderLatexToPngBuffer(latexInput);
-          bot.sendPhoto(
-            chatId,
-            buffer,
-            { reply_to_message_id: msg.message_id },
-            { filename: "latex.png", contentType: "image/png" },
-          );
-          break;
-        case "/etymology":
-        case "/dictionary":
-          let searchQuery = text
-            .split(" ")
-            .slice(1)
-            .join(" ")
-            .split("|")[0]
-            .trim()
-            .toLowerCase();
-          let languageQuery = text.split("|").slice(1).join(" ").trim();
-          if (languageQuery.length == 0) {
-            languageQuery = null;
-          }
-          const { word, audioUrls, langCode } = await lookupWord(
-            dictionaryCollection,
-            searchQuery,
-            languageQuery,
-          );
-          if (!word) {
-            handleResponse(
-              `Word not found (language ${langCode})`,
-              msg,
-              chatId,
-              myCache,
-              bot,
-              null,
-            ).catch((err) => {
-              console.error(err);
-            });
-            break;
-          }
-          /* if (audioUrls && audioUrls.length > 0) {
+					const interpretation = sanitizeTelegramHtml(await sendSimpleRequestToDeepSeek(llmRequest));
+					await storeTarotReadingInDB(msg.from.id, msg.chat.id, reading, interpretation, userQuestion);
+					const interpretationMessageBlocks = createMessageBlocks(interpretation);
+					await bot.editMessageText(reading.join("\n") + `\n<blockquote expandable>${interpretationMessageBlocks[0]}</blockquote>`, {
+						parse_mode: "HTML",
+						message_id: tarotMessage.message_id,
+						chat_id: msg.chat.id,
+					});
+					if (interpretationMessageBlocks.length > 2) {
+						for (let i = 1; i < interpretationMessageBlocks.length; i++) {
+							await bot.sendMessage(chatId, `\n<blockquote expandable> ${interpretationMessageBlocks[i]}</blockquote>`);
+						}
+					}
+					break;
+				case "/auslan":
+					const auslanText = text.split(" ").slice(1).join(" ") || msg.reply_to_message?.text || "";
+					if (auslanText.trim().length == 0) {
+						handleResponse("usage: /auslan <word>", msg, chatId, myCache, bot, null).catch((err) => {
+							console.error(err);
+						});
+						return;
+					}
+					const mediaUrl = await findAuslanSignVideoLink(auslanText);
+					if (mediaUrl) {
+						bot.sendVideo(chatId, mediaUrl, { reply_to_message_id: msg.message_id }, { filename: "auslan.mp4", contentType: "video/mp4" });
+					}
+					break;
+				case "/latex":
+					const latexInput = text.split(" ").slice(1).join(" ") || msg.reply_to_message?.text || "";
+					if (latexInput.trim().length == 0) {
+						handleResponse("usage: /latex <latex code>", msg, chatId, myCache, bot, null).catch((err) => {
+							console.error(err);
+						});
+						return;
+					}
+					const buffer = await renderLatexToPngBuffer(latexInput);
+					bot.sendPhoto(chatId, buffer, { reply_to_message_id: msg.message_id }, { filename: "latex.png", contentType: "image/png" });
+					break;
+				case "/etymology":
+				case "/dictionary":
+					let searchQuery = text.split(" ").slice(1).join(" ").split("|")[0].trim().toLowerCase();
+					let languageQuery = text.split("|").slice(1).join(" ").trim();
+					if (languageQuery.length == 0) {
+						languageQuery = null;
+					}
+					const { word, audioUrls, langCode } = await lookupWord(dictionaryCollection, searchQuery, languageQuery);
+					if (!word) {
+						handleResponse(`Word not found (language ${langCode})`, msg, chatId, myCache, bot, null).catch((err) => {
+							console.error(err);
+						});
+						break;
+					}
+					/* if (audioUrls && audioUrls.length > 0) {
 						bot
 							.sendMediaGroup(
 								chatId,
@@ -1898,142 +1617,101 @@ Here are the commands you can use:
 								console.error(err);
 							});
 					} */
-          if (audioUrls && audioUrls.length > 0) {
-            await bot.sendVoice(chatId, audioUrls[0], {
-              reply_to_message_id: msg.message_id,
-            });
-          }
-          const messageBlocks = createMessageBlocks(word, 4000);
-          for (const block of messageBlocks) {
-            await bot.sendMessage(
-              chatId,
-              `<blockquote expandable>${block}</blockquote>`,
-              { parse_mode: "HTML", reply_to_message_id: msg.message_id },
-            );
-          }
-          break;
-      }
-    }
-  } catch (err) {
-    console.error(err);
-  }
+					if (audioUrls && audioUrls.length > 0) {
+						await bot.sendVoice(chatId, audioUrls[0], {
+							reply_to_message_id: msg.message_id,
+						});
+					}
+					const messageBlocks = createMessageBlocks(word, 4000);
+					for (const block of messageBlocks) {
+						await bot.sendMessage(chatId, `<blockquote expandable>${block}</blockquote>`, { parse_mode: "HTML", reply_to_message_id: msg.message_id });
+					}
+					break;
+			}
+		}
+	} catch (err) {
+		console.error(err);
+	}
 }
 
 function extractUrl(text) {
-  if (!text) {
-    return null;
-  }
-  var urlRegex = /(https?:\/\/[^ ]*)/;
-  const matches = text.match(urlRegex);
-  if (!matches) return null;
-  var url = matches[0];
-  return url ?? null;
+	if (!text) {
+		return null;
+	}
+	var urlRegex = /(https?:\/\/[^ ]*)/;
+	const matches = text.match(urlRegex);
+	if (!matches) return null;
+	var url = matches[0];
+	return url ?? null;
 }
-function handleResponse(
-  text,
-  msg,
-  chatId,
-  myCache,
-  bot,
-  containerFormat,
-  disablePreview = false,
-) {
-  return new Promise(async (resolve, reject) => {
-    await bot.sendChatAction(chatId, "typing");
+function handleResponse(text, msg, chatId, myCache, bot, containerFormat, disablePreview = false) {
+	return new Promise(async (resolve, reject) => {
+		await bot.sendChatAction(chatId, "typing");
 
-    const previousResponse = myCache.get(`message-${msg.message_id}`);
-    if (previousResponse) {
-      bot
-        .editMessageText(
-          containerFormat
-            ? `<${containerFormat}>${text}</${containerFormat}>`
-            : text,
-          {
-            parse_mode: "HTML",
-            message_id: previousResponse,
-            chat_id: chatId,
-            disable_web_page_preview: disablePreview,
-          },
-        )
-        .then(() => resolve(msg))
-        .catch(async (err) => {
-          console.error(err);
-          sendNewMessage(
-            bot,
-            chatId,
-            text,
-            msg.message_id,
-            myCache,
-            containerFormat,
-          ).catch((err) => {
-            console.error(err);
-            reject();
-          });
-        });
-    } else {
-      sendNewMessage(
-        bot,
-        chatId,
-        text,
-        msg.message_id,
-        myCache,
-        containerFormat,
-        disablePreview,
-      )
-        .then((response) => {
-          resolve(response);
-        })
-        .catch((err) => {
-          console.error(err);
-          reject();
-        });
-    }
-  });
+		const previousResponse = myCache.get(`message-${chatId}-${msg.message_id}`);
+		if (previousResponse) {
+			bot
+				.editMessageText(containerFormat ? `<${containerFormat}>${text}</${containerFormat}>` : text, {
+					parse_mode: "HTML",
+					message_id: previousResponse,
+					chat_id: chatId,
+					disable_web_page_preview: disablePreview,
+				})
+				.then(() => resolve(msg))
+				.catch(async (err) => {
+					console.error(err);
+					sendNewMessage(bot, chatId, text, msg.message_id, myCache, containerFormat).catch((err) => {
+						console.error(err);
+						reject();
+					});
+				});
+		} else {
+			sendNewMessage(bot, chatId, text, msg.message_id, myCache, containerFormat, disablePreview)
+				.then((response) => {
+					resolve(response);
+				})
+				.catch((err) => {
+					console.error(err);
+					reject();
+				});
+		}
+	});
 }
 
-async function sendNewMessage(
-  bot,
-  chatId,
-  data,
-  messageId,
-  myCache,
-  containerFormat,
-  disablePreview = false,
-) {
-  try {
-    const responseMessage = await bot.sendMessage(
-      chatId,
-      containerFormat
-        ? `<${containerFormat}>${data}</${containerFormat}>`
-        : data,
-      {
-        parse_mode: "HTML",
-        reply_to_message_id: messageId,
-        disable_web_page_preview: disablePreview,
-      },
-    );
-    myCache.set(`message-${messageId}`, responseMessage.message_id, 10000);
-    return responseMessage;
-  } catch (err) {
-    console.error(err);
-  }
+async function sendNewMessage(bot, chatId, data, messageId, myCache, containerFormat, disablePreview = false) {
+	try {
+		const responseMessage = await bot.sendMessage(chatId, containerFormat ? `<${containerFormat}>${data}</${containerFormat}>` : data, {
+			parse_mode: "HTML",
+			reply_to_message_id: messageId,
+			disable_web_page_preview: disablePreview,
+		});
+		myCache.set(`message-${chatId}-${messageId}`, responseMessage.message_id, 10000);
+		return responseMessage;
+	} catch (err) {
+		console.error(err);
+	}
 }
 
-function translateShell(string, languagePart) {
-  return new Promise((resolve, reject) => {
-    isAllowed = /^[a-zA-Z0-9 ]+$/.test(string);
-    //if (isAllowed) {
-    exec(`trans ${languagePart || ""} "${string}"`, (error, stdout, stderr) => {
-      if (error) {
-        console.error(`exec error: ${error}`);
-        reject(stderr);
-      } else {
-        resolve(stdout);
-      }
-    });
-    //} else {
-    //}
-  });
+async function translateShell(string, languagePart) {
+	try {
+		let source = "auto";
+		let target = "en";
+
+		if (languagePart) {
+			if (languagePart.includes(":")) {
+				const parts = languagePart.split(":");
+				source = parts[0] || "auto";
+				target = parts[1] || "en";
+			} else {
+				target = languagePart;
+			}
+		}
+
+		const escapedString = string.replace(/"/g, '\\"').replace(/`/g, "\\`").replace(/\$/g, "\\$");
+		const { stdout } = await execAsync(`trans -b -s "${source}" -t "${target}" "${escapedString}"`);
+		return stdout.trim();
+	} catch (error) {
+		console.error(`Translate-shell error: ${error}`);
+		throw error;
+	}
 }
-/* 
-classifyToxicity("fuck off now"); */

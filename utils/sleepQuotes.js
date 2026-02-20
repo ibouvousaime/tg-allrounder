@@ -12,4 +12,17 @@ const sleepQuotes = [
 	`He that can take rest is greater than he that can take cities. — Benjamin Franklin`,
 ];
 
-module.exports = { sleepQuotes };
+const goingToClassQuotes = [
+	/* 	`“Teachers can open the door, but you must enter it yourself.” — Chinese Proverb`,
+	 */
+	`“Better three hours too soon than a minute too late.” — William Shakespeare`,
+
+	`“Punctuality is the soul of business.” — Thomas Chandler Haliburton`,
+
+	`“The trouble with being punctual is that nobody’s there to appreciate it.” — Franklin P. Jones`,
+
+	`“You may delay, but time will not.” — Benjamin Franklin`,
+	`"Alarm clocks tell you when to wake up, but it is up to you to rise" - Panda boi`,
+];
+
+module.exports = { sleepQuotes, goingToClassQuotes };

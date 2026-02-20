@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 
-const filePath = path.join(__dirname, "tmp", "settings.json");
+const filePath = path.join(__dirname, "..", "tmp", "cache.json");
 
 function saveVariable(key, value) {
 	let data = {};

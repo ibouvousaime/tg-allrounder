@@ -23,6 +23,7 @@ async function extractTweet(urlOrId, isId = false, visited = new Set()) {
 	visited.add(tweetId);
 
 	const res = await rettiwt.tweet.details(tweetId, "id");
+	console.log(res, tweetId);
 	if (!res) return null;
 	if (res?.replyTo) {
 		const replyId = res.replyTo;
@@ -81,7 +82,7 @@ function renderMedia(media = []) {
 						}
 							
 						</div>
-					`
+					`,
 				)
 				.join("")}
 		</div>

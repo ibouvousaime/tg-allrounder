@@ -9,88 +9,94 @@ function isValidRegex(str) {
 
 function findSimilarMessages(collection, chatId, regex) {
 	/* regex = regex.replace(/[\[\]\\.^$*+?(){}|]/g, "\\$&"); */
-	return new Promise(async (resolve, reject) => {
-		if (regex.trim().length < 2) {
-			resolve([]);
-			return;
-		}
-		if (isValidRegex(regex)) {
-			await collection
-				.aggregate([
-					{
-						$match: {
-							text: {
-								$regex: new RegExp(regex, "i"),
-							},
-							chatId,
-							$expr: {
-								$not: {
-									$regexMatch: {
-										input: "$text",
-										regex: "^/",
+	return new Promise((resolve, reject) => {
+		(async () => {
+			if (regex.trim().length < 2) {
+				resolve([]);
+				return;
+			}
+			if (isValidRegex(regex)) {
+				try {
+					const output = await collection
+						.aggregate([
+							{
+								$match: {
+									text: {
+										$regex: new RegExp(regex, "i"),
+									},
+									chatId,
+									$expr: {
+										$not: {
+											$regexMatch: {
+												input: "$text",
+												regex: "^/",
+											},
+										},
 									},
 								},
 							},
-						},
-					},
-				])
-				.sort({ date: -1 })
-				//.limit(40)
-				.toArray()
-				.then((output) => {
+						])
+						.sort({ date: -1 })
+						//.limit(40)
+						.toArray();
 					resolve(output);
-				});
-		} else {
-		}
+				} catch (err) {
+					reject(err);
+				}
+			} else {
+				reject(new Error("Invalid regex"));
+			}
+		})();
 	});
 }
 
 function countSenders(collection, chatId, regex) {
 	/* regex = regex.replace(/[\[\]\\.^$*+?(){}|]/g, "\\$&"); */
-	return new Promise(async (resolve, reject) => {
-		if (isValidRegex(regex)) {
-			await collection
-				.aggregate([
-					{
-						$match: {
-							text: {
-								$regex: new RegExp(regex, "i"),
-							},
-							chatId,
-							$expr: {
-								$not: {
-									$regexMatch: {
-										input: "$text",
-										regex: "^/",
+	return new Promise((resolve, reject) => {
+		(async () => {
+			if (isValidRegex(regex)) {
+				try {
+					const output = await collection
+						.aggregate([
+							{
+								$match: {
+									text: {
+										$regex: new RegExp(regex, "i"),
+									},
+									chatId,
+									$expr: {
+										$not: {
+											$regexMatch: {
+												input: "$text",
+												regex: "^/",
+											},
+										},
 									},
 								},
 							},
-						},
-					},
-					{
-						$group: {
-							_id: "$sender",
-							count: { $sum: 1 },
-						},
-					},
-					{
-						$sort: { count: -1 },
-					},
-					{
-						$limit: 10,
-					},
-				])
-				.toArray()
-				.then((output) => {
+							{
+								$group: {
+									_id: "$sender",
+									count: { $sum: 1 },
+								},
+							},
+							{
+								$sort: { count: -1 },
+							},
+							{
+								$limit: 10,
+							},
+						])
+						.toArray();
 					resolve(output);
-				})
-				.catch((err) => {
+				} catch (err) {
 					console.error(err);
-					reject();
-				});
-		} else {
-			reject();
-		}
+					reject(err);
+				}
+			} else {
+				reject(new Error("Invalid regex"));
+			}
+		})();
 	});
 }
 
@@ -118,43 +124,102 @@ function cosineSimilarity(vecA, vecB) {
 }
 
 async function searchMessagesByEmbedding(collection, chatId, searchQuery, limit = 10) {
-	return new Promise(async (resolve, reject) => {
-		try {
-			if (!searchQuery || searchQuery.trim().length < 2) {
-				resolve([]);
-				return;
-			}
+	try {
+		if (!searchQuery || searchQuery.trim().length < 2) {
+			return [];
+		}
 
-			const queryEmbedding = await generateLocalEmbedding(searchQuery);
+		const queryEmbedding = await generateLocalEmbedding(searchQuery);
 
-			const messages = await collection
-				.find({
-					chatId,
-					embedding: { $exists: true },
-					$expr: {
-						$not: {
-							$regexMatch: {
-								input: "$text",
-								regex: "^/",
+		const messages = await collection
+			.find({
+				chatId,
+				embedding: { $exists: true },
+				$expr: {
+					$not: {
+						$regexMatch: {
+							input: "$text",
+							regex: "^/",
+						},
+					},
+				},
+			})
+			.toArray();
+
+		const messagesWithSimilarity = messages.map((msg) => ({
+			...msg,
+			similarity: cosineSimilarity(queryEmbedding, msg.embedding),
+		}));
+
+		messagesWithSimilarity.sort((a, b) => b.similarity - a.similarity);
+
+		return messagesWithSimilarity.slice(0, limit);
+	} catch (err) {
+		console.error("Error in searchMessagesByEmbedding:", err);
+		throw err;
+	}
+}
+
+function wordCountLeaderboard(collection, chatId, limit = 10) {
+	return new Promise((resolve, reject) => {
+		(async () => {
+			try {
+				const pipeline = [
+					{
+						$match: {
+							chatId,
+							text: { $exists: true, $ne: "" },
+							$expr: {
+								$not: {
+									$regexMatch: {
+										input: "$text",
+										regex: "^/",
+									},
+								},
 							},
 						},
 					},
-				})
-				.toArray();
-
-			const messagesWithSimilarity = messages.map((msg) => ({
-				...msg,
-				similarity: cosineSimilarity(queryEmbedding, msg.embedding),
-			}));
-
-			messagesWithSimilarity.sort((a, b) => b.similarity - a.similarity);
-
-			resolve(messagesWithSimilarity.slice(0, limit));
-		} catch (err) {
-			console.error("Error in searchMessagesByEmbedding:", err);
-			reject(err);
-		}
+					{
+						$addFields: {
+							wordCount: {
+								$size: {
+									$filter: {
+										input: {
+											$split: [{ $ifNull: ["$text", ""] }, " "],
+										},
+										cond: { $ne: ["$$this", ""] },
+									},
+								},
+							},
+						},
+					},
+					{
+						$group: {
+							_id: "$sender",
+							totalWords: { $sum: "$wordCount" },
+							messageCount: { $sum: 1 },
+						},
+					},
+					{
+						$sort: { totalWords: -1 },
+					},
+					{
+						$limit: limit,
+					},
+				];
+				const result = await collection.aggregate(pipeline).toArray();
+				resolve(result);
+			} catch (err) {
+				console.error(err);
+				reject(err);
+			}
+		})();
 	});
 }
 
-module.exports = { findSimilarMessages, countSenders, searchMessagesByEmbedding };
+module.exports = {
+	findSimilarMessages,
+	countSenders,
+	searchMessagesByEmbedding,
+	wordCountLeaderboard,
+};
