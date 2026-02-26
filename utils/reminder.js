@@ -9,13 +9,15 @@ const reminders = [
 	{
 		key: "sleep",
 		startHour: 0,
-		endHour: 3,
+		endHour: 6,
+		weekendsOnly: true,
 		getMessage: () => sleepQuotes.random(),
 	},
 	{
 		key: "class",
 		startHour: 8,
 		endHour: 9,
+		weekendsOnly: false,
 		getMessage: () => goingToClassQuotes.random(),
 	},
 ];
@@ -28,9 +30,15 @@ async function handleTimeReminders(msg, antCollection, bot) {
 	const hour = now.hour;
 	const today = now.toISODate();
 
+	const isWeekend = now.weekday >= 6;
+
 	const ant = (await antCollection.findOne({ userId: msg.from.id })) ?? {};
 
 	for (const reminder of reminders) {
+		const shouldRunToday = reminder.weekendsOnly === undefined ? true : reminder.weekendsOnly ? isWeekend : !isWeekend;
+
+		if (!shouldRunToday) continue;
+
 		const isInWindow = hour >= reminder.startHour && hour < reminder.endHour;
 
 		const alreadySentToday = ant?.lastSent?.[reminder.key] === today;

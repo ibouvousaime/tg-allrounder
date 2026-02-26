@@ -214,7 +214,7 @@ axios
 				command: "summary",
 				description: "Summarize last N messages (default: 100)",
 			},
-			{ command: "quran", description: "Get a random Quran verse" },
+			{ command: "alquran", description: "Get a random Quran verse" },
 			{ command: "bible", description: "Get a random Bible verse" },
 			{
 				command: "dictionary",
@@ -494,16 +494,13 @@ bot.on("audio", async (msg) => {
 	}
 });
 
-bot.on("voice", async (msg) => {
+/* bot.on("voice", async (msg) => {
 	try {
 		const chatId = msg.chat.id;
 		const voice = msg.voice;
 		if (!voice) return;
 		const randomChance = Math.random();
-		/* if (randomChance < 0.4) {
-			console.log("denied", randomChance);
-			return;
-		} */
+
 		console.log(`Voice message received from ${msg.from.id} in ${chatId}, duration: ${voice.duration}s`);
 
 		if (voice.duration > 300) {
@@ -560,7 +557,7 @@ bot.on("voice", async (msg) => {
 	} catch (error) {
 		console.error("Voice transcription failed:", error);
 	}
-});
+}); */
 /* bot.on("photo", async (msg) => {
 	const photoMedia = msg.photo.pop();
 
@@ -614,7 +611,7 @@ bot.on("text", async (msg) => {
 	} */
 	handleTimeReminders(msg, antCollection, bot);
 
-	if (text.trim().length > 0) {
+	/* if (text.trim().length > 0) {
 		analyzeSentiment(text).then((analysis) => {
 			const canReact = (chatId, cooldown = 60 * 60_000) => {
 				const key = `reactionCooldown:${chatId}`;
@@ -678,7 +675,7 @@ bot.on("text", async (msg) => {
         );
         later(react);
         return;
-      } */
+      } 
 			if (maybe(0.01)) {
 				console.log("later react triggered");
 				setTimeout(react, 120000);
@@ -688,7 +685,7 @@ bot.on("text", async (msg) => {
 
 			react();
 		});
-	}
+	} */
 
 	await handleSocialMediaLinks(text, chatId, msg.message_id, msg);
 
@@ -756,7 +753,7 @@ Here are the commands you can use:
 /findAlbum - Find album for audio track (reply to audio)
 
 <b>Search & Database:</b>
-/regex [pattern] - Search messages by regex
+/search [pattern] - Search messages by regex
 /count [pattern] - Count message occurrences
 /wordcount- Show word count leaderboard
 /glossary [word] - Search glossary
@@ -1376,7 +1373,7 @@ Here are the commands you can use:
 							console.error(err);
 						});
 					break;
-				case "/regex":
+				case "/search":
 					const regex = msg.text.split(" ").slice(1)?.join(" ");
 					findSimilarMessages(db.collection("messages"), chatId, regex)
 						.then((results) => {
@@ -1495,7 +1492,7 @@ Here are the commands you can use:
 						console.error(e);
 					});
 					break;
-				case "/quran":
+				case "/alquran":
 					const verseData = await getRandomQuranVerse();
 					handleResponse(verseData, msg, chatId, myCache, bot, null).catch((e) => {
 						console.error(e);

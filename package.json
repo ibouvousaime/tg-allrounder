@@ -53,6 +53,7 @@
     "tgfancy": "^0.13.0",
     "weather-js": "^2.0.0",
     "wiktionary-node": "^1.1.8",
-    "xml2js": "^0.6.2"
+    "xml2js": "^0.6.2",
+    "ytmusic-api": "^5.3.1"
   }
 }

@@ -191,7 +191,7 @@ async function getSpotifyMusicLink(link) {
 	if (fullLink) {
 		const YTMusic = await loadMusicModule();
 		const ytmusic = new YTMusic();
-		await ytmusic.initialize(/* { cookies: fs.readFileSync(path.join(os.homedir(), "cookies.txt")).toString() } */);
+		await ytmusic.initialize({ cookies: fs.readFileSync(path.join(os.homedir(), "cookies.txt")).toString() });
 
 		if (type == "track") {
 			const songData = await SpottyDL.getTrack(fullLink);
