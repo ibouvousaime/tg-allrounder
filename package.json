@@ -38,6 +38,7 @@
     "music-metadata": "^11.9.0",
     "natural": "^7.1.0",
     "node-cache": "^5.1.2",
+    "node-geocoder": "^4.4.1",
     "node-schedule": "^2.1.1",
     "node-telegram-bot-api": "^0.67.0",
     "openai": "^6.7.0",
@@ -54,6 +55,7 @@
     "weather-js": "^2.0.0",
     "wiktionary-node": "^1.1.8",
     "xml2js": "^0.6.2",
-    "ytmusic-api": "^5.3.1"
+    "ytmusic-api": "^5.3.1",
+    "geo-tz": "^7.0.0"
   }
 }

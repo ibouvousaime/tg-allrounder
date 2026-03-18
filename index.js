@@ -137,6 +137,7 @@ const { findAuslanSignVideoLink } = require("./utils/auslan");
 const { renderLatexToPngBuffer } = require("./utils/latex");
 const { analyzeSentiment, analyzePhoto, emotionToEmoji, allowedReactionEmojis } = require("./utils/transformers");
 const { handleTimeReminders } = require("./utils/reminder");
+const { getCoordinates, getAstrologyChart, generateSynastryChart } = require("./utils/astrology");
 
 axios
 	.post(`${process.env.LOCAL_TELEGRAM_API_URL || "http://localhost:8081"}/bot${process.env.TELEGRAM_BOT_TOKEN}/setMyCommands`, {
@@ -232,6 +233,9 @@ axios
 				command: "wordcount",
 				description: "Show word count",
 			},
+			{ command: "birthdata", description: "Register birth data" },
+			{ command: "natal", description: "Get natal chart based on registered birth data" },
+			{ command: "synastry", description: "Get synastry chart between you and another user based on registered birth data" },
 		],
 	})
 	.then(() => {})
@@ -333,13 +337,26 @@ async function handleSocialMediaLinks(text, chatId, messageId, msg) {
 	});
 }
 
+async function translateTweet(tweetData) {
+	console.log("translating...", tweetData.fullText);
+	console.log("Reply", tweetData.replyTo);
+	tweetData.fullText = await translateShell(tweetData.fullText, "en");
+	if (tweetData.replyTo) {
+		tweetData.replyTo = await translateTweet(tweetData.replyTo);
+	}
+	if (tweetData.quoted) {
+		tweetData.quoted = await translateTweet(tweetData.quoted);
+	}
+	return tweetData;
+}
+
 async function handleTweetPreview(msg, text, chatId) {
 	const tweetId = extractTweetId(text);
 	if (!tweetId || text.includes("no preview")) {
 		return;
 	}
 	try {
-		const tweetData = await extractTweet(text);
+		let tweetData = await extractTweet(text);
 		if (!tweetData) return;
 		const messageOptions = {
 			parse_mode: "HTML",
@@ -347,8 +364,7 @@ async function handleTweetPreview(msg, text, chatId) {
 			has_spoiler: text.includes("spoiler"),
 		};
 		if (text.includes("translate")) {
-			const translatedText = await translateShell(tweetData.fullText, "en");
-			tweetData.fullText = translatedText;
+			tweetData = await translateTweet(tweetData);
 		}
 		//const hasVideos = tweetData?.media?.some((media) => media.type == "VIDEO" || media.type == "GIF");
 		if (!text.includes("screenshot")) {
@@ -1003,7 +1019,7 @@ Here are the commands you can use:
 					}
 					const translateString = (textMsg.trim().length ? textMsg : msg.quote?.text || msg.reply_to_message?.text || msg.reply_to_message?.caption) || "";
 
-					translateShell(translateString.replace(/['"]/g, "\\$&"), languageInfo)
+					translateShell(translateString, languageInfo)
 						.then(async (response) => {
 							if (response.length == 0) {
 								handleResponse("Translation failed or returned empty.", msg, chatId, myCache, bot, null).catch((err) => console.error(err));
@@ -1038,9 +1054,19 @@ Here are the commands you can use:
 					break;
 				case "/reactionstats":
 					try {
+						const sevenDaysAgo = new Date();
+						sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
 						const topUsers = await reactionsCollection
 							.aggregate([
 								{ $match: { chat_id: chatId } },
+								{
+									$match: {
+										timestamp: {
+											$gte: sevenDaysAgo,
+										},
+									},
+								},
 								{ $unwind: "$new_reaction" },
 								{ $group: { _id: "$user_id", total_reactions: { $sum: 1 } } },
 								{ $sort: { total_reactions: -1 } },
@@ -1048,16 +1074,12 @@ Here are the commands you can use:
 							])
 							.toArray();
 
-						/* if (topUsers.length === 0) {
-              await bot.sendMessage(
-                chatId,
-                "No reaction data found for this chat.",
-                {
-                  reply_to_message_id: msg.message_id,
-                },
-              );
-              break;
-            } */
+						if (topUsers.length === 0) {
+							await bot.sendMessage(chatId, "No reaction data found for this chat.", {
+								reply_to_message_id: msg.message_id,
+							});
+							break;
+						}
 
 						const leaderboard = [];
 						for (const user of topUsers) {
@@ -1097,25 +1119,20 @@ Here are the commands you can use:
 							});
 						}
 
-						let leaderboardText = ``;
-						leaderboardText += "```\n";
-						leaderboardText += "Rank | Name         | React | Top Emoji\n";
-						leaderboardText += "----------------------------------------\n";
-
+						let leaderboardText = `<pre>`;
+						leaderboardText += `Rank | Name         | React | Top Emoji\n`;
+						leaderboardText += `----------------------------------------\n`;
 						leaderboard.forEach((user, index) => {
 							const rank = String(index + 1).padEnd(4);
 							const name = user.userName.slice(0, 12).padEnd(12);
 							const reactions = String(user.total_reactions).padEnd(5);
 							const topEmoji = `${user.top_emoji} (${user.top_emoji_count})`;
-
 							leaderboardText += `${rank} | ${name} | ${reactions} | ${topEmoji}\n`;
 						});
-
-						leaderboardText += "```";
-
+						leaderboardText += `</pre>`;
 						await bot.sendMessage(chatId, leaderboardText, {
 							reply_to_message_id: msg.message_id,
-							parse_mode: "MarkdownV2",
+							parse_mode: "HTML",
 						});
 					} catch (error) {
 						console.error("Error fetching reaction stats:", error);
@@ -1589,6 +1606,134 @@ Here are the commands you can use:
 					const buffer = await renderLatexToPngBuffer(latexInput);
 					bot.sendPhoto(chatId, buffer, { reply_to_message_id: msg.message_id }, { filename: "latex.png", contentType: "image/png" });
 					break;
+				case "/birthdata":
+					const birthDataInput = text.split(" ").slice(1).join(" ") || "";
+					if (!birthDataInput.trim().length) {
+						handleResponse("usage: /registerBirthData date, time, location (e.g., 1990-01-01 12:00 New York)", msg, chatId, myCache, bot, null).catch((err) => {
+							console.error(err);
+						});
+						return;
+					}
+					const LLMNormalizedDataInfo = await sendSimpleRequestToDeepSeek(
+						`Normalize this birth data into a structured JSON format with fields for date, time, and location: ${birthDataInput}. Example output: {"date": "1990-01-01", "time": "12:00", "location": {"city": "New York", "country": "USA"}}. Make sure to only include the JSON in your response without any additional text. Only use the fields mentioned in the example, and if any information is missing from the input, set that field to null. For location, if you can only extract a city or a country, that's fine, just set the other field to null.`,
+					);
+					const firstBraceIndex = LLMNormalizedDataInfo.indexOf("{");
+					const lastBraceIndex = LLMNormalizedDataInfo.lastIndexOf("}");
+					if (firstBraceIndex === -1 || lastBraceIndex === -1 || lastBraceIndex <= firstBraceIndex) {
+						handleResponse("Failed to parse birth data. Please ensure the input is in the correct format.", msg, chatId, myCache, bot, null).catch((err) => {
+							console.error(err);
+						});
+						return;
+					}
+
+					const normalizedBirthData = JSON.parse(LLMNormalizedDataInfo.substring(firstBraceIndex, lastBraceIndex + 1));
+					const coordinates = await getCoordinates([normalizedBirthData.location.city, normalizedBirthData.location.country].join(", "));
+					await db.collection("birthData").updateOne(
+						{
+							userId: msg.from.id,
+							chatId,
+						},
+						{
+							$set: {
+								name: [msg.from.first_name, msg.from.last_name, `(@${msg.from.username})`].join(" ").trim(),
+								username: msg.from.username,
+								...normalizedBirthData,
+								...coordinates,
+							},
+						},
+						{
+							upsert: true,
+						},
+					);
+					const formattedBirthData = `Date: ${normalizedBirthData.date || "N/A"}\nTime: ${normalizedBirthData.time || "N/A"}\nLocation: ${normalizedBirthData.location.city || ""}${normalizedBirthData.location.city && normalizedBirthData.location.country ? ", " : ""}${normalizedBirthData.location.country || "N/A"}`;
+					handleResponse(
+						`Birth data registered successfully. Please ensure the following information is correct. \n${formattedBirthData}`,
+						msg,
+						chatId,
+						myCache,
+						bot,
+						null,
+					).catch((err) => {
+						console.error(err);
+					});
+					break;
+				case "/synastry":
+					if (!msg.reply_to_message) {
+						handleResponse("Please reply to a user's message with /synastry to compare your birth data with theirs.", msg, chatId, myCache, bot, null).catch(
+							(err) => {
+								console.error(err);
+							},
+						);
+						return;
+					}
+					const getFormattedData = (birthData) => {
+						const dateInfo = birthData.date ? new Date(birthData.date) : null;
+
+						const dataInfo = {
+							name: birthData.name || "",
+							year: dateInfo.getFullYear(),
+							month: dateInfo.getMonth() + 1,
+							day: dateInfo.getDate(),
+							hour: birthData.time ? parseInt(birthData.time.split(":")[0]) : 0,
+							minute: birthData.time ? parseInt(birthData.time.split(":")[1]) : 0,
+							city: birthData.location?.city || "",
+							lat: birthData.lat,
+							lng: birthData.lng,
+							location: birthData.location,
+						};
+						return dataInfo;
+					};
+					const otherUser = msg.reply_to_message.from;
+					const otherBirthData = await db.collection("birthData").findOne({ chatId, userId: otherUser.id });
+					const userBirthData = await db.collection("birthData").findOne({ chatId, userId: msg.from.id });
+					const formattedOtherBirthData = otherBirthData ? getFormattedData(otherBirthData) : null;
+					const formattedUserBirthData = userBirthData ? getFormattedData(userBirthData) : null;
+
+					if (!otherBirthData || !userBirthData) {
+						handleResponse(
+							"Birth data not found for one or both users. make sure both you and the other user have registered their birth data using /birthdata.",
+							msg,
+							chatId,
+							myCache,
+							bot,
+							null,
+						).catch((err) => {
+							console.error(err);
+						});
+					}
+					const image = await generateSynastryChart(formattedUserBirthData, formattedOtherBirthData);
+					await bot.sendDocument(chatId, image, { reply_to_message_id: msg.message_id });
+					break;
+				case "/natal":
+					let username = msg.text.split(" ").slice(1).join(" ") || msg.reply_to_message?.from?.username || "";
+					username = (username || msg.from.username).replace("@", "");
+
+					const birthData = await db.collection("birthData").findOne({ chatId, username });
+
+					if (!birthData) {
+						handleResponse("No birth data found. add your birth data first using /birthdata.", msg, chatId, myCache, bot, null).catch((err) => {
+							console.error(err);
+						});
+						return;
+					}
+					const dateInfo = birthData.date ? new Date(birthData.date) : null;
+					const dataInfo = {
+						name: birthData.name || "",
+						year: dateInfo.getFullYear(),
+						month: dateInfo.getMonth() + 1,
+						day: dateInfo.getDate(),
+						hour: birthData.time ? parseInt(birthData.time.split(":")[0]) : 0,
+						minute: birthData.time ? parseInt(birthData.time.split(":")[1]) : 0,
+						city: birthData.location?.city || "",
+						lat: birthData.lat,
+						lng: birthData.lng,
+						location: birthData.location,
+					};
+
+					const chart = await getAstrologyChart(dataInfo);
+					await bot.sendPhoto(chatId, chart, { reply_to_message_id: msg.message_id });
+
+					break;
 				case "/etymology":
 				case "/dictionary":
 					let searchQuery = text.split(" ").slice(1).join(" ").split("|")[0].trim().toLowerCase();
@@ -1706,7 +1851,7 @@ async function translateShell(string, languagePart) {
 
 		const escapedString = string.replace(/"/g, '\\"').replace(/`/g, "\\`").replace(/\$/g, "\\$");
 		const { stdout } = await execAsync(`trans -b -s "${source}" -t "${target}" "${escapedString}"`);
-		return stdout.trim();
+		return stdout;
 	} catch (error) {
 		console.error(`Translate-shell error: ${error}`);
 		throw error;
