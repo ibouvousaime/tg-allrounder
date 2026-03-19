@@ -8,8 +8,11 @@ const puppeteer = require("puppeteer");
 const geocoder = NodeGeocoder(options);
 const { find } = require("geo-tz");
 const countries = require("./countries");
-const fs = require("fs");
-async function getAstrologyChart(dateInfo) {
+const fs = require("node:fs");
+const allowedLanguages = ["EN", "FR", "PT", "ES", "TR", "RU", "IT", "CN", "DE", "HI"];
+
+const prettier = require("prettier");
+async function getAstrologyChart(dateInfo, language = "EN") {
 	const locationInfo = dateInfo.location || {};
 	const apiKey = process.env.ASTRO_API_KEY;
 	const apiUrl = process.env.ASTROLOGER_API_URL || "http://localhost:8000";
@@ -40,9 +43,9 @@ async function getAstrologyChart(dateInfo) {
 	const payload = {
 		subject,
 		theme: "dark",
-		language: "EN",
 		style: "modern",
 		show_zodiac_background_ring: true,
+		language: allowedLanguages.includes(language) ? language : "EN",
 	};
 
 	const response = await axios.post(`${apiUrl}/api/v5/chart/birth-chart`, payload, {
@@ -60,7 +63,7 @@ async function getAstrologyChart(dateInfo) {
 	return await convertSVGToPNG(svgData);
 }
 
-async function generateSynastryChart(subject1, subject2) {
+async function generateSynastryChart(subject1, subject2, language = "EN") {
 	const apiKey = process.env.ASTRO_API_KEY;
 	const apiUrl = process.env.ASTROLOGER_API_URL || "http://localhost:8000";
 
@@ -69,7 +72,7 @@ async function generateSynastryChart(subject1, subject2) {
 		if (!timezone) {
 			throw new Error("Could not determine timezone from coordinates");
 		}
-		let output = {
+		const output = {
 			name: subject.name,
 			city: subject.location.city || "",
 			year: subject.year,
@@ -82,7 +85,6 @@ async function generateSynastryChart(subject1, subject2) {
 			timezone: timezone,
 			houses_system_identifier: "W",
 		};
-		console.log(subject.location);
 		const countryCode = subject.location?.country ? getCountryCode(subject.location.country) : null;
 		if (countryCode) {
 			output.nation = countryCode;
@@ -93,8 +95,9 @@ async function generateSynastryChart(subject1, subject2) {
 		first_subject: formatSubject(subject1),
 		second_subject: formatSubject(subject2),
 		theme: "dark",
-		style: "modern",
+
 		show_zodiac_background_ring: true,
+		language: allowedLanguages.includes(language) ? language : "EN",
 	};
 
 	const response = await axios.post(`${apiUrl}/api/v5/chart/synastry`, payload, {
@@ -112,10 +115,15 @@ async function generateSynastryChart(subject1, subject2) {
 	return await convertSVGToPNG(svgData, { width: 2048, height: 768 });
 }
 
-async function convertSVGToPNG(svgData, options = { width: 2048, height: 2048 }) {
+async function convertSVGToPNG(svgData, options = { width: 2048, height: 2048 }, cleanOptions = null) {
 	const browser = await puppeteer.launch({
 		args: ["--no-sandbox", "--disable-setuid-sandbox"],
 	});
+
+	let cleanedSVG = svgData;
+	/* 	if (cleanOptions) {
+		cleanedSVG = await cleanKerykeionSVG(svgData, cleanOptions);
+	} */
 
 	try {
 		const page = await browser.newPage();
@@ -164,6 +172,63 @@ async function convertSVGToPNG(svgData, options = { width: 2048, height: 2048 })
 		await browser.close();
 	}
 }
+
+async function getSolarReturnChart(dateInfo, year) {
+	const apiKey = process.env.ASTRO_API_KEY;
+	const apiUrl = process.env.ASTROLOGER_API_URL || "http://localhost:8000";
+	formatSubject = (subject) => {
+		const timezone = find(subject.lat, subject.lng)[0];
+		if (!timezone) {
+			throw new Error("Could not determine timezone from coordinates");
+		}
+		const output = {
+			name: subject.name,
+			city: subject.location.city || "",
+			year: subject.year,
+			month: subject.month,
+			day: subject.day,
+			hour: subject.hour,
+			minute: subject.minute,
+			longitude: subject.lng,
+			latitude: subject.lat,
+			timezone: timezone,
+			houses_system_identifier: "W",
+		};
+		const countryCode = subject.location?.country ? getCountryCode(subject.location.country) : null;
+		if (countryCode) {
+			output.nation = countryCode;
+		}
+		return output;
+	};
+	const subject = formatSubject(dateInfo);
+	const payload = {
+		subject,
+		theme: "dark",
+
+		year,
+		show_zodiac_background_ring: true,
+		double_chart_aspect_grid_type: "list",
+		show_house_position_comparison: false,
+		show_cusp_position_comparison: false,
+		show_aspect_icons: false,
+	};
+	const response = await axios.post(`${apiUrl}/api/v5/chart/solar-return`, payload, {
+		headers: {
+			"X-RapidAPI-Key": apiKey,
+			"Content-Type": "application/json",
+		},
+	});
+	const svgData = response.data.chart;
+	const formattedSVG = await prettier.format(svgData, { parser: "html" });
+	fs.writeFileSync("solar_return_chart.svg", formattedSVG);
+
+	if (!svgData) {
+		throw new Error("No SVG chart returned from API");
+	}
+
+	return await convertSVGToPNG(svgData, { width: 2048, height: 768 }, { removeRightPanels: true, removeAspectList: true, width: 800 });
+}
+
 async function getCoordinates(location) {
 	try {
 		const res = await geocoder.geocode(location);
@@ -185,4 +250,9 @@ function getCountryCode(countryName) {
 	return countries.countries.find((c) => c.name.toLowerCase() === lower)?.code || null;
 }
 
-module.exports = { getAstrologyChart, getCoordinates, generateSynastryChart };
+module.exports = {
+	getAstrologyChart,
+	getCoordinates,
+	generateSynastryChart,
+	getSolarReturnChart,
+};

@@ -137,7 +137,8 @@ const { findAuslanSignVideoLink } = require("./utils/auslan");
 const { renderLatexToPngBuffer } = require("./utils/latex");
 const { analyzeSentiment, analyzePhoto, emotionToEmoji, allowedReactionEmojis } = require("./utils/transformers");
 const { handleTimeReminders } = require("./utils/reminder");
-const { getCoordinates, getAstrologyChart, generateSynastryChart } = require("./utils/astrology");
+const { getCoordinates, getAstrologyChart, generateSynastryChart, getSolarReturnChart } = require("./utils/astrology");
+const { sub } = require("@tensorflow/tfjs-node");
 
 axios
 	.post(`${process.env.LOCAL_TELEGRAM_API_URL || "http://localhost:8081"}/bot${process.env.TELEGRAM_BOT_TOKEN}/setMyCommands`, {
@@ -234,8 +235,19 @@ axios
 				description: "Show word count",
 			},
 			{ command: "birthdata", description: "Register birth data" },
-			{ command: "natal", description: "Get natal chart based on registered birth data" },
-			{ command: "synastry", description: "Get synastry chart between you and another user based on registered birth data" },
+			{
+				command: "registerbirthdata",
+				description: "Register birth data for another user (admin only)",
+			},
+			{
+				command: "natal",
+				description: "Get natal chart based on registered birth data",
+			},
+			{
+				command: "synastry",
+				description: "Get synastry chart between you and another user based on registered birth data",
+			},
+			{ command: "solarreturn", description: "Get solar return chart" },
 		],
 	})
 	.then(() => {})
@@ -386,13 +398,13 @@ async function handleTweetPreview(msg, text, chatId) {
 			const media = tweetData.media;
 			const mediaCount = media?.length || 0;
 
-			const tweetTextParts = createMessageBlocks(tweetText, 4000).map((text) => `<blockquote expandable>${text}</blockquote>`);
+			const tweetTextParts = createMessageBlocks(tweetText, 2000).map((text) => `<blockquote expandable>${text}</blockquote>`);
 			tweetText = tweetTextParts[0];
 			if (mediaCount === 0) {
 				await bot.sendMessage(chatId, tweetText, messageOptions);
 			} else if (mediaCount === 1) {
 				const singleMedia = media[0];
-				const optionsWithCaption = { ...messageOptions, caption: tweetText };
+				const optionsWithCaption = { ...messageOptions };
 
 				if (singleMedia.type === "VIDEO" || singleMedia.type == "GIF") {
 					await bot.sendVideo(chatId, singleMedia.url, optionsWithCaption);
@@ -403,7 +415,7 @@ async function handleTweetPreview(msg, text, chatId) {
 				const mediaGroup = media.map((item, index) => ({
 					type: item.type.toLowerCase(),
 					media: item.url,
-					...(index === 0 && { caption: tweetText, parse_mode: "HTML" }),
+					...(index === 0 && { parse_mode: "HTML" }),
 				}));
 				await bot.sendMediaGroup(chatId, mediaGroup);
 			} else {
@@ -416,11 +428,11 @@ async function handleTweetPreview(msg, text, chatId) {
 				}
 				await bot.sendMessage(chatId, tweetText, messageOptions);
 			}
-			if (tweetTextParts.length > 1) {
-				for (let i = 1; i < tweetTextParts.length; i++) {
-					await bot.sendMessage(chatId, tweetTextParts[i], messageOptions);
-				}
+			//	if (tweetTextParts.length > 1) {
+			for (let i = 0; i < tweetTextParts.length; i++) {
+				await bot.sendMessage(chatId, tweetTextParts[i], messageOptions);
 			}
+			//}
 		} else {
 			await bot.sendPhoto(chatId, await generateTweetScreenshot(tweetData), messageOptions);
 		}
@@ -1606,7 +1618,7 @@ Here are the commands you can use:
 					const buffer = await renderLatexToPngBuffer(latexInput);
 					bot.sendPhoto(chatId, buffer, { reply_to_message_id: msg.message_id }, { filename: "latex.png", contentType: "image/png" });
 					break;
-				case "/birthdata":
+				case "/birthdata": {
 					const birthDataInput = text.split(" ").slice(1).join(" ") || "";
 					if (!birthDataInput.trim().length) {
 						handleResponse("usage: /registerBirthData date, time, location (e.g., 1990-01-01 12:00 New York)", msg, chatId, myCache, bot, null).catch((err) => {
@@ -1657,13 +1669,97 @@ Here are the commands you can use:
 						console.error(err);
 					});
 					break;
-				case "/synastry":
+				}
+				case "/registerbirthdata": {
 					if (!msg.reply_to_message) {
-						handleResponse("Please reply to a user's message with /synastry to compare your birth data with theirs.", msg, chatId, myCache, bot, null).catch(
+						handleResponse("Please reply to a user's message with /registerbirthdata to register birth data for them.", msg, chatId, myCache, bot, null).catch(
 							(err) => {
 								console.error(err);
 							},
 						);
+						return;
+					}
+					const adminIds = await getAdminsIds(chatId);
+					console.log("Admin IDs:", adminIds);
+					console.log("including me", [...adminIds, process.env.STICKER_OWNER]);
+					if (![...adminIds, Number(process.env.STICKER_OWNER)].includes(msg.from.id)) {
+						handleResponse("Only admins can register birth data for other users.", msg, chatId, myCache, bot, null).catch((err) => {
+							console.error(err);
+						});
+						return;
+					}
+					const targetUser = msg.reply_to_message.from;
+					const birthDataInput = text.split(" ").slice(1).join(" ") || "";
+					if (!birthDataInput.trim().length) {
+						handleResponse("usage: /registerbirthdata date, time, location (e.g., 1990-01-01 12:00 New York)", msg, chatId, myCache, bot, null).catch((err) => {
+							console.error(err);
+						});
+						return;
+					}
+					const LLMNormalizedDataInfo = await sendSimpleRequestToDeepSeek(
+						`Normalize this birth data into a structured JSON format with fields for date, time, and location: ${birthDataInput}. Example output: {"date": "1990-01-01", "time": "12:00", "location": {"city": "New York", "country": "USA"}}. Make sure to only include the JSON in your response without any additional text. Only use the fields mentioned in the example, and if any information is missing from the input, set that field to null. For location, if you can only extract a city or a country, that's fine, just set the other field to null.`,
+					);
+					const firstBraceIndex = LLMNormalizedDataInfo.indexOf("{");
+					const lastBraceIndex = LLMNormalizedDataInfo.lastIndexOf("}");
+					if (firstBraceIndex === -1 || lastBraceIndex === -1 || lastBraceIndex <= firstBraceIndex) {
+						handleResponse("Failed to parse birth data. Please ensure the input is in the correct format.", msg, chatId, myCache, bot, null).catch((err) => {
+							console.error(err);
+						});
+						return;
+					}
+
+					const normalizedBirthData = JSON.parse(LLMNormalizedDataInfo.substring(firstBraceIndex, lastBraceIndex + 1));
+					const coordinates = await getCoordinates([normalizedBirthData.location.city, normalizedBirthData.location.country].join(", "));
+					await db.collection("birthData").updateOne(
+						{
+							userId: targetUser.id,
+							chatId,
+						},
+						{
+							$set: {
+								name: [targetUser.first_name, targetUser.last_name, `(@${targetUser.username})`].join(" ").trim(),
+								username: targetUser.username,
+								...normalizedBirthData,
+								...coordinates,
+							},
+						},
+						{
+							upsert: true,
+						},
+					);
+					const formattedBirthData = `Date: ${normalizedBirthData.date || "N/A"}\nTime: ${normalizedBirthData.time || "N/A"}\nLocation: ${normalizedBirthData.location.city || ""}${normalizedBirthData.location.city && normalizedBirthData.location.country ? ", " : ""}${normalizedBirthData.location.country || "N/A"}`;
+					handleResponse(
+						`Birth data registered successfully for ${targetUser.first_name}. Please ensure the following information is correct. \n${formattedBirthData}`,
+						msg,
+						chatId,
+						myCache,
+						bot,
+						null,
+					).catch((err) => {
+						console.error(err);
+					});
+					break;
+				}
+				case "/synastry":
+					let subjectsUsernames = msg.text
+						.split(" ")
+						.slice(1)
+						.map((s) => s.replace("@", ""))
+						.filter((s) => s.trim().length > 0);
+					if (subjectsUsernames.length == 1) {
+						subjectsUsernames = [subjectsUsernames[0], msg.reply_to_message?.from?.username || ""].filter((s) => s.trim().length > 0);
+					}
+					if (!subjectsUsernames || subjectsUsernames.length < 2) {
+						handleResponse(
+							"Please provide the usernames of two users to compare their birth data or just one if you wanna compare theirs with yourself.",
+							msg,
+							chatId,
+							myCache,
+							bot,
+							null,
+						).catch((err) => {
+							console.error(err);
+						});
 						return;
 					}
 					const getFormattedData = (birthData) => {
@@ -1683,9 +1779,8 @@ Here are the commands you can use:
 						};
 						return dataInfo;
 					};
-					const otherUser = msg.reply_to_message.from;
-					const otherBirthData = await db.collection("birthData").findOne({ chatId, userId: otherUser.id });
-					const userBirthData = await db.collection("birthData").findOne({ chatId, userId: msg.from.id });
+					const otherBirthData = await db.collection("birthData").findOne({ chatId, username: subjectsUsernames[0] });
+					const userBirthData = await db.collection("birthData").findOne({ chatId, username: subjectsUsernames[1] });
 					const formattedOtherBirthData = otherBirthData ? getFormattedData(otherBirthData) : null;
 					const formattedUserBirthData = userBirthData ? getFormattedData(userBirthData) : null;
 
@@ -1702,10 +1797,28 @@ Here are the commands you can use:
 						});
 					}
 					const image = await generateSynastryChart(formattedUserBirthData, formattedOtherBirthData);
-					await bot.sendDocument(chatId, image, { reply_to_message_id: msg.message_id });
+					await bot.sendDocument(
+						chatId,
+						image,
+						{
+							reply_to_message_id: msg.message_id,
+						},
+						{ filename: "synastry_chart.png", contentType: "image/png" },
+					);
 					break;
 				case "/natal":
 					let username = msg.text.split(" ").slice(1).join(" ") || msg.reply_to_message?.from?.username || "";
+					let languageCode = null;
+					if (!username.includes("@") && username.length == 2) {
+						languageCode = username || "EN";
+						username = "";
+					}
+					if (username.includes("|")) {
+						const parts = username.split("|");
+						username = parts[0].trim();
+						languageCode = parts[1].trim();
+					}
+
 					username = (username || msg.from.username).replace("@", "");
 
 					const birthData = await db.collection("birthData").findOne({ chatId, username });
@@ -1730,9 +1843,52 @@ Here are the commands you can use:
 						location: birthData.location,
 					};
 
-					const chart = await getAstrologyChart(dataInfo);
-					await bot.sendPhoto(chatId, chart, { reply_to_message_id: msg.message_id });
+					const chart = await getAstrologyChart(dataInfo, languageCode);
+					await bot.sendPhoto(chatId, chart, {
+						reply_to_message_id: msg.message_id,
+					});
 
+					break;
+				case "/solarreturn":
+					let solarUsername = msg.reply_to_message?.from?.username || "";
+					solarUsername = (solarUsername || msg.from.username).replace("@", "");
+					const birthDataForSolar = await db.collection("birthData").findOne({ chatId, username: solarUsername });
+					if (!birthDataForSolar) {
+						handleResponse("No birth data found. add your birth data first using /birthdata.", msg, chatId, myCache, bot, null).catch((err) => {
+							console.error(err);
+						});
+						break;
+					}
+					const dateInfoForSolar = birthDataForSolar.date ? new Date(birthDataForSolar.date) : null;
+					const dataInfoForSolar = {
+						name: birthDataForSolar.name || "",
+						year: dateInfoForSolar.getFullYear(),
+						month: dateInfoForSolar.getMonth() + 1,
+						day: dateInfoForSolar.getDate(),
+						hour: birthDataForSolar.time ? parseInt(birthDataForSolar.time.split(":")[0]) : 0,
+						minute: birthDataForSolar.time ? parseInt(birthDataForSolar.time.split(":")[1]) : 0,
+						city: birthDataForSolar.location?.city || "",
+						lat: birthDataForSolar.lat,
+						lng: birthDataForSolar.lng,
+						location: birthDataForSolar.location,
+						birthday: dateInfoForSolar,
+					};
+					const today = new Date();
+					const birthdayThisYear = new Date(today.getFullYear(), dateInfoForSolar.getMonth(), dateInfoForSolar.getDate());
+					if (today > birthdayThisYear) {
+						solarYear = today.getFullYear();
+					} else {
+						solarYear = today.getFullYear() - 1;
+					}
+					const solarChart = await getSolarReturnChart(dataInfoForSolar, solarYear);
+					await bot.sendDocument(
+						chatId,
+						solarChart,
+						{
+							reply_to_message_id: msg.message_id,
+						},
+						{ filename: `solar_return_chart_${solarYear}_${solarUsername}` },
+					);
 					break;
 				case "/etymology":
 				case "/dictionary":
