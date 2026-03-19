@@ -60,7 +60,7 @@ function sendRequestWithImageToClaude(textMessage, imageArrayBuffer, imageMediaT
 function sendSimpleRequestToDeepSeek(message) {
 	return new Promise(async (resolve, reject) => {
 		const completion = await deepseekai.chat.completions.create({
-			model: "deepseek-reasoner",
+			model: "deepseek-chat",
 			messages: [{ role: "user", content: message }],
 		});
 		//response format is { data: { choices: [{ message: { content: "..." } }] } }

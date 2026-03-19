@@ -42,6 +42,7 @@ async function getAstrologyChart(dateInfo) {
 		theme: "dark",
 		language: "EN",
 		style: "modern",
+		show_zodiac_background_ring: true,
 	};
 
 	const response = await axios.post(`${apiUrl}/api/v5/chart/birth-chart`, payload, {
