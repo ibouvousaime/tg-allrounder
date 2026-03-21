@@ -56,7 +56,8 @@ async function getAstrologyChart(dateInfo, language = "EN") {
 	});
 
 	const svgData = response.data.chart;
-	if (!svgData) {
+	/* 	fs.writeFileSync("astrology_data.json", JSON.stringify(response.data.chart_data, null, 2));
+	 */ if (!svgData) {
 		throw new Error("No SVG chart returned from API");
 	}
 
@@ -95,6 +96,7 @@ async function generateSynastryChart(subject1, subject2, language = "EN") {
 		first_subject: formatSubject(subject1),
 		second_subject: formatSubject(subject2),
 		theme: "dark",
+		style: "modern",
 
 		show_zodiac_background_ring: true,
 		language: allowedLanguages.includes(language) ? language : "EN",

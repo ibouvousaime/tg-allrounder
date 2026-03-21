@@ -401,7 +401,7 @@ async function handleTweetPreview(msg, text, chatId) {
 			const tweetTextParts = createMessageBlocks(tweetText, 2000).map((text) => `<blockquote expandable>${text}</blockquote>`);
 			tweetText = tweetTextParts[0];
 			if (mediaCount === 0) {
-				await bot.sendMessage(chatId, tweetText, messageOptions);
+				//await bot.sendMessage(chatId, tweetText, messageOptions);
 			} else if (mediaCount === 1) {
 				const singleMedia = media[0];
 				const optionsWithCaption = { ...messageOptions };
@@ -1680,8 +1680,6 @@ Here are the commands you can use:
 						return;
 					}
 					const adminIds = await getAdminsIds(chatId);
-					console.log("Admin IDs:", adminIds);
-					console.log("including me", [...adminIds, process.env.STICKER_OWNER]);
 					if (![...adminIds, Number(process.env.STICKER_OWNER)].includes(msg.from.id)) {
 						handleResponse("Only admins can register birth data for other users.", msg, chatId, myCache, bot, null).catch((err) => {
 							console.error(err);
@@ -1746,12 +1744,13 @@ Here are the commands you can use:
 						.slice(1)
 						.map((s) => s.replace("@", ""))
 						.filter((s) => s.trim().length > 0);
+					let repliedToID = msg.reply_to_message?.from?.id;
 					if (subjectsUsernames.length == 1) {
 						subjectsUsernames = [subjectsUsernames[0], msg.reply_to_message?.from?.username || ""].filter((s) => s.trim().length > 0);
 					}
-					if (!subjectsUsernames || subjectsUsernames.length < 2) {
+					if (!subjectsUsernames || subjectsUsernames.length < 1) {
 						handleResponse(
-							"Please provide the usernames of two users to compare their birth data or just one if you wanna compare theirs with yourself.",
+							"Please provide the usernames of two users to compare their birth data, reply to a message to include the replied user's birth data, or a combination of both. For example: /synastry @user1 @user2 or reply to a user's message with /synastry @otherUser.",
 							msg,
 							chatId,
 							myCache,
@@ -1780,7 +1779,13 @@ Here are the commands you can use:
 						return dataInfo;
 					};
 					const otherBirthData = await db.collection("birthData").findOne({ chatId, username: subjectsUsernames[0] });
-					const userBirthData = await db.collection("birthData").findOne({ chatId, username: subjectsUsernames[1] });
+					let userBirthData;
+					if (subjectsUsernames[1]) {
+						userBirthData = await db.collection("birthData").findOne({ chatId, username: subjectsUsernames[1] });
+					} else {
+						userBirthData = await db.collection("birthData").findOne({ chatId, userId: repliedToID });
+					}
+
 					const formattedOtherBirthData = otherBirthData ? getFormattedData(otherBirthData) : null;
 					const formattedUserBirthData = userBirthData ? getFormattedData(userBirthData) : null;
 
@@ -1808,6 +1813,7 @@ Here are the commands you can use:
 					break;
 				case "/natal":
 					let username = msg.text.split(" ").slice(1).join(" ") || msg.reply_to_message?.from?.username || "";
+					let userid = msg.reply_to_message?.from?.id;
 					let languageCode = null;
 					if (!username.includes("@") && username.length == 2) {
 						languageCode = username || "EN";
@@ -1820,8 +1826,8 @@ Here are the commands you can use:
 					}
 
 					username = (username || msg.from.username).replace("@", "");
-
-					const birthData = await db.collection("birthData").findOne({ chatId, username });
+					console.log(msg.reply_to_message?.from?.id);
+					const birthData = await db.collection("birthData").findOne({ chatId, $or: [{ userId: msg.reply_to_message?.from?.id || msg?.from?.id }] });
 
 					if (!birthData) {
 						handleResponse("No birth data found. add your birth data first using /birthdata.", msg, chatId, myCache, bot, null).catch((err) => {
@@ -1852,7 +1858,9 @@ Here are the commands you can use:
 				case "/solarreturn":
 					let solarUsername = msg.reply_to_message?.from?.username || "";
 					solarUsername = (solarUsername || msg.from.username).replace("@", "");
-					const birthDataForSolar = await db.collection("birthData").findOne({ chatId, username: solarUsername });
+					const birthDataForSolar = await db
+						.collection("birthData")
+						.findOne({ chatId, $or: [{ username: solarUsername }, { userId: msg.reply_to_message?.from?.id }] });
 					if (!birthDataForSolar) {
 						handleResponse("No birth data found. add your birth data first using /birthdata.", msg, chatId, myCache, bot, null).catch((err) => {
 							console.error(err);
