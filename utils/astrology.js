@@ -42,7 +42,7 @@ async function getAstrologyChart(dateInfo, language = "EN") {
 
 	const payload = {
 		subject,
-		theme: "dark",
+		theme: "strawberry",
 		style: "modern",
 		show_zodiac_background_ring: true,
 		language: allowedLanguages.includes(language) ? language : "EN",
@@ -56,8 +56,8 @@ async function getAstrologyChart(dateInfo, language = "EN") {
 	});
 
 	const svgData = response.data.chart;
-	/* 	fs.writeFileSync("astrology_data.json", JSON.stringify(response.data.chart_data, null, 2));
-	 */ if (!svgData) {
+	fs.writeFileSync("astrology_data.json", JSON.stringify(response.data.chart_data, null, 2));
+	if (!svgData) {
 		throw new Error("No SVG chart returned from API");
 	}
 
@@ -95,7 +95,7 @@ async function generateSynastryChart(subject1, subject2, language = "EN") {
 	const payload = {
 		first_subject: formatSubject(subject1),
 		second_subject: formatSubject(subject2),
-		theme: "dark",
+		theme: "strawberry",
 		style: "modern",
 
 		show_zodiac_background_ring: true,
@@ -205,7 +205,7 @@ async function getSolarReturnChart(dateInfo, year) {
 	const subject = formatSubject(dateInfo);
 	const payload = {
 		subject,
-		theme: "dark",
+		theme: "strawberry",
 
 		year,
 		show_zodiac_background_ring: true,

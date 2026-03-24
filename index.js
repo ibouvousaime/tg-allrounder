@@ -1790,8 +1790,15 @@ Here are the commands you can use:
 					const formattedUserBirthData = userBirthData ? getFormattedData(userBirthData) : null;
 
 					if (!otherBirthData || !userBirthData) {
+						const missingUsers = [];
+						if (!otherBirthData) {
+							missingUsers.push(`@${subjectsUsernames[0]}`);
+						}
+						if (!userBirthData) {
+							missingUsers.push(subjectsUsernames[1] ? `@${subjectsUsernames[1]}` : "the replied user");
+						}
 						handleResponse(
-							"Birth data not found for one or both users. make sure both you and the other user have registered their birth data using /birthdata.",
+							`Birth data not found for ${missingUsers.join(" and ")}. make sure both you and the other user have registered their birth data using /birthdata.`,
 							msg,
 							chatId,
 							myCache,
@@ -1812,21 +1819,7 @@ Here are the commands you can use:
 					);
 					break;
 				case "/natal":
-					let username = msg.text.split(" ").slice(1).join(" ") || msg.reply_to_message?.from?.username || "";
-					let userid = msg.reply_to_message?.from?.id;
 					let languageCode = null;
-					if (!username.includes("@") && username.length == 2) {
-						languageCode = username || "EN";
-						username = "";
-					}
-					if (username.includes("|")) {
-						const parts = username.split("|");
-						username = parts[0].trim();
-						languageCode = parts[1].trim();
-					}
-
-					username = (username || msg.from.username).replace("@", "");
-					console.log(msg.reply_to_message?.from?.id);
 					const birthData = await db.collection("birthData").findOne({ chatId, $or: [{ userId: msg.reply_to_message?.from?.id || msg?.from?.id }] });
 
 					if (!birthData) {
