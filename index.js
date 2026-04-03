@@ -19,6 +19,8 @@ const path = require("node:path");
 const math = require("mathjs");
 const { getWordEtymology, lookupWord } = require("./utils/dictionary");
 const { sleepQuotes } = require("./utils/sleepQuotes");
+const moment = require("moment");
+
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, {
 	baseApiUrl: process.env.LOCAL_TELEGRAM_API_URL || "http://localhost:8081",
 	polling: {
@@ -101,7 +103,7 @@ const { getAndSendRandomQuestion } = require("./utils/trivia");
 const { sendRandomQuizz } = require("./utils/quizz");
 const { getPollResults } = require("./utils/telegram_polls");
 const { getReading } = require("./utils/tarot");
-const { extractAndEchoSocialLink, downloadImageAsBuffer, getAlbumFromSong, downloadVideoFromUrl } = require("./utils/downloader");
+const { extractAndEchoSocialLink, downloadImageAsBuffer, getAlbumFromSong, downloadVideoFromUrl, extractAudioFromVideo } = require("./utils/downloader");
 const { findDirectArchiveLink } = require("./utils/web");
 const { textToSpeech, createConversationAudio } = require("./utils/tts");
 const { makeid, createMessageBlocks } = require("./utils/util");
@@ -211,6 +213,10 @@ axios
 			{
 				command: "cut",
 				description: "Cut video from start to end time (reply to video)",
+			},
+			{
+				command: "extractaudio",
+				description: "Extract audio from video (reply to video)",
 			},
 			{
 				command: "summary",
@@ -380,7 +386,7 @@ async function handleTweetPreview(msg, text, chatId) {
 		}
 		//const hasVideos = tweetData?.media?.some((media) => media.type == "VIDEO" || media.type == "GIF");
 		if (!text.includes("screenshot")) {
-			let tweetText = `${tweetData?.fullText} \nTweet by ${tweetData?.tweetBy?.fullName || ""} (@${tweetData?.tweetBy?.userName}) on ${tweetData?.createdAt || ""}`;
+			let tweetText = `${tweetData?.fullText} \nTweet by ${tweetData?.tweetBy?.fullName || ""} (@${tweetData?.tweetBy?.userName}) on ${moment.utc(tweetData?.createdAt).format("MMMM Do YYYY [at] h:mm a [(GMT)]") || ""}`;
 			tweetData.media = tweetData.media || [];
 			tweetData.media = await Promise.all(
 				tweetData.media.map((media) => {
@@ -764,6 +770,7 @@ Here are the commands you can use:
 /wordcloud - Generate word cloud from recent messages
 /createsticker [emojis] - Create sticker from image (also /addsticker)
 /cut <start> <end> - Cut video (reply to video)
+/extractaudio - Extract audio from video (reply to video)
 
 <b>Analysis:</b>
 /archive - Get archive.org link for URL
@@ -1204,6 +1211,30 @@ Here are the commands you can use:
 						cutVideo(file.file_path, start, end, async ({ outputVideoPath }) => {
 							await bot.sendVideo(chatId, outputVideoPath, { reply_to_message_id: msg.message_id }, { filename: "cut.mp4", contentType: "video/mp4" });
 							return;
+						});
+					}
+					break;
+				}
+
+				case "/extractaudio": {
+					if (msg.reply_to_message && (msg.reply_to_message.video || msg.reply_to_message.document)) {
+						try {
+							const file = await bot.getFile(msg.reply_to_message.video ? msg.reply_to_message.video.file_id : msg.reply_to_message.document.file_id);
+							await extractAudioFromVideo(file.file_path, async ({ outputAudioPath }) => {
+								const sentAudio = await bot.sendAudio(chatId, outputAudioPath, {
+									reply_to_message_id: msg.message_id,
+								});
+								storeMusicInDB(sentAudio.audio, sentAudio, msg.from);
+							});
+						} catch (error) {
+							console.error("Failed to extract audio:", error);
+							await bot.sendMessage(chatId, `Failed to extract audio: ${error.message}`, {
+								reply_to_message_id: msg.message_id,
+							});
+						}
+					} else {
+						handleResponse("Please reply to a video or document to extract audio.", msg, chatId, myCache, bot, null).catch((err) => {
+							console.error(err);
 						});
 					}
 					break;
@@ -1820,7 +1851,10 @@ Here are the commands you can use:
 					break;
 				case "/natal":
 					let languageCode = null;
-					const birthData = await db.collection("birthData").findOne({ chatId, $or: [{ userId: msg.reply_to_message?.from?.id || msg?.from?.id }] });
+					const birthData = await db.collection("birthData").findOne({
+						chatId,
+						$or: [{ userId: msg.reply_to_message?.from?.id || msg?.from?.id }],
+					});
 
 					if (!birthData) {
 						handleResponse("No birth data found. add your birth data first using /birthdata.", msg, chatId, myCache, bot, null).catch((err) => {
@@ -1851,9 +1885,10 @@ Here are the commands you can use:
 				case "/solarreturn":
 					let solarUsername = msg.reply_to_message?.from?.username || "";
 					solarUsername = (solarUsername || msg.from.username).replace("@", "");
-					const birthDataForSolar = await db
-						.collection("birthData")
-						.findOne({ chatId, $or: [{ username: solarUsername }, { userId: msg.reply_to_message?.from?.id }] });
+					const birthDataForSolar = await db.collection("birthData").findOne({
+						chatId,
+						$or: [{ username: solarUsername }, { userId: msg.reply_to_message?.from?.id }],
+					});
 					if (!birthDataForSolar) {
 						handleResponse("No birth data found. add your birth data first using /birthdata.", msg, chatId, myCache, bot, null).catch((err) => {
 							console.error(err);
@@ -1995,7 +2030,7 @@ async function translateShell(string, languagePart) {
 	try {
 		let source = "auto";
 		let target = "en";
-
+		if (!string) return "";
 		if (languagePart) {
 			if (languagePart.includes(":")) {
 				const parts = languagePart.split(":");

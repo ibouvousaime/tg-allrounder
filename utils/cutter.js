@@ -21,7 +21,7 @@ async function cutVideo(inputVideoPath, start, end, callback) {
 	const startArg = formatTime(start);
 	const endArg = formatTime(end);
 	console.log({ startArg, endArg, start, end });
-	const ffmpegCmd = ["ffmpeg", "-y", `-i "${inputVideoPath}"`, `-ss ${startArg}`, `-to ${endArg}`, "-c copy", `"${outputVideoPath}"`].join(" ");
+	const ffmpegCmd = ["ffmpeg", "-y", `-ss ${startArg}`, `-i "${inputVideoPath}"`, `-to ${endArg}`, "-c copy", `"${outputVideoPath}"`].join(" ");
 
 	try {
 		await execAsync(ffmpegCmd);

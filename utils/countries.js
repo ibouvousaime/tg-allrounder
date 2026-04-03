@@ -180,6 +180,7 @@ module.exports = {
 		{ name: "Qatar", code: "QA" },
 		{ name: "Reunion", code: "RE" },
 		{ name: "Romania", code: "RO" },
+		{ name: "Russia", code: "RU" },
 		{ name: "Russian Federation", code: "RU" },
 		{ name: "RWANDA", code: "RW" },
 		{ name: "Saint Helena", code: "SH" },
