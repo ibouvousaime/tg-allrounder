@@ -469,7 +469,7 @@ async function storeMessageInDB(msg, chatId) {
 		messageId: msg.message_id,
 		text: msg.text,
 		date: new Date(msg.date * 1000),
-		sender: [msg.from.first_name, msg.from.last_name].join(" "),
+		sender: [msg.from.first_name, msg.from.last_name].join(" ").trim(),
 	};
 
 	collection.insertOne({ ...newMessage }).catch((err) => {
@@ -1849,6 +1849,32 @@ Here are the commands you can use:
 						{ filename: "synastry_chart.png", contentType: "image/png" },
 					);
 					break;
+				case "/natalfor": {
+					let birthDataInfoRawText = text.split(" ").slice(1).join(" ");
+					const parsedDataInfo = await sendSimpleRequestToDeepSeek(
+						`Parse this birth data into a structured JSON format with fields for date, time, and location: ${birthDataInfoRawText} including the name of the person who it's for otherwize call him anonymous. Example output: {"name": "John Doe", "year": "1990", "month": "01", "day": "01", "hour": "12", "minute": "00", "location": {"city": "New York", "country": "USA"}}. Make sure to only include the JSON in your response without any additional text. Only use the fields mentioned in the example, and if any information is missing from the input, set that field to null. For location, if you can only extract a city or a country, that's fine, just set the other field to null.`,
+					);
+					const firstBraceIndexNatal = parsedDataInfo.indexOf("{");
+					const lastBraceIndexNatal = parsedDataInfo.lastIndexOf("}");
+					if (firstBraceIndexNatal === -1 || lastBraceIndexNatal === -1 || lastBraceIndexNatal <= firstBraceIndexNatal) {
+						handleResponse("Failed to parse birth data. Please ensure the input is in the correct format.", msg, chatId, myCache, bot, null).catch((err) => {
+							console.error(err);
+						});
+						return;
+					}
+
+					const normalizedBirthDataInfo = JSON.parse(parsedDataInfo.substring(firstBraceIndexNatal, lastBraceIndexNatal + 1));
+					const coordinatesInfo = await getCoordinates([normalizedBirthDataInfo.location.city, normalizedBirthDataInfo.location.country].join(", "));
+					const completeBirthDataInfo = {
+						...normalizedBirthDataInfo,
+						...coordinatesInfo,
+					};
+					const chart = await getAstrologyChart(completeBirthDataInfo, null);
+					await bot.sendPhoto(chatId, chart, {
+						reply_to_message_id: msg.message_id,
+					});
+					break;
+				}
 				case "/natal":
 					let languageCode = null;
 					const birthData = await db.collection("birthData").findOne({

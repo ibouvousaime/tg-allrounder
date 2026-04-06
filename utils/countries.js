@@ -231,6 +231,7 @@ module.exports = {
 		{ name: "Ukraine", code: "UA" },
 		{ name: "United Arab Emirates", code: "AE" },
 		{ name: "United Kingdom", code: "GB" },
+		{ name: "USA", code: "US" },
 		{ name: "United States of America", code: "US" },
 		{ name: "United States", code: "US" },
 		{ name: "United States Minor Outlying Islands", code: "UM" },

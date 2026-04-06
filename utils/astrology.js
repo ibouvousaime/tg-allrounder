@@ -47,16 +47,20 @@ async function getAstrologyChart(dateInfo, language = "EN") {
 		show_zodiac_background_ring: true,
 		language: allowedLanguages.includes(language) ? language : "EN",
 	};
-
-	const response = await axios.post(`${apiUrl}/api/v5/chart/birth-chart`, payload, {
-		headers: {
-			"X-RapidAPI-Key": apiKey,
-			"Content-Type": "application/json",
-		},
-	});
+	let response;
+	try {
+		response = await axios.post(`${apiUrl}/api/v5/chart/birth-chart`, payload, {
+			headers: {
+				"X-RapidAPI-Key": apiKey,
+				"Content-Type": "application/json",
+			},
+		});
+	} catch (error) {
+		console.error("Error fetching astrology chart:", error.response ? error.response.data : error.message);
+		throw error;
+	}
 
 	const svgData = response.data.chart;
-	fs.writeFileSync("astrology_data.json", JSON.stringify(response.data.chart_data, null, 2));
 	if (!svgData) {
 		throw new Error("No SVG chart returned from API");
 	}

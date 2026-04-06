@@ -1,5 +1,5 @@
 const sleepQuotes = [
-	/* 	`"There is a time for many words, and there is also a time for sleep." - Homer, The Odyssey`,
+	`"There is a time for many words, and there is also a time for sleep." - Homer, The Odyssey`,
 	`“Sleep is God. Go worship.” - Jim Butcher, Death Masks`,
 	`"People spend money on beauty potions, but a good night's rest makes all the difference." - Christina Aguilera`,
 	`"Tired minds don't plan well. Sleep first, plan later." - Walter Reisch`,
@@ -10,7 +10,7 @@ const sleepQuotes = [
 	`Finish each day before you begin the next, and interpose a solid wall of sleep between the two. — Ralph Waldo Emerson`,
 	`To achieve the impossible dream, try going to sleep. — Joan Klempner`,
 	`He that can take rest is greater than he that can take cities. — Benjamin Franklin`,
-	 */ `Go to sleep, my little coconut-flavoured ice cream, or tomorrow you'll be tired, my little sweet sugar pancake. <3`,
+	`Go to sleep, my little coconut-flavoured ice cream, or tomorrow you'll be tired, my little sweet sugar pancake. <3`,
 ];
 
 const goingToClassQuotes = [
