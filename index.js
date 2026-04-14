@@ -98,7 +98,7 @@ const dictionaryCollection = client.db("wiktionary").collection("words");
 const { Convert } = require("easy-currencies");
 const { extractAndConvertToCm } = require("./utils/converter");
 const { eyeWords, reactToTelegramMessage, bannedWords, nerdwords, sendPoll } = require("./utils/reactions");
-const { getRandomOracleMessageObj, getContext, explainContextClaude } = require("./utils/oracle");
+const { getRandomOracleMessageObj, getContext, explainContext, sanitizeTags } = require("./utils/oracle");
 const { generateEmbedding, findSimilarMessages, countSenders, searchMessagesByEmbedding, wordCountLeaderboard } = require("./utils/search");
 const { extractTweetId, extractTweet, generateTweetScreenshot } = require("./utils/bird");
 const { getAndSendRandomQuestion } = require("./utils/trivia");
@@ -226,6 +226,8 @@ axios
 			},
 			{ command: "alquran", description: "Get a random Quran verse" },
 			{ command: "bible", description: "Get a random Bible verse" },
+			{ command: "torah", description: "Get a random Torah verse" },
+
 			{
 				command: "dictionary",
 				description: "Look up a word in the dictionary",
@@ -1510,20 +1512,43 @@ Here are the commands you can use:
 						handleResponse("No URL found. Reply to a message with a URL or use /summarize <url>", msg, chatId, myCache, bot, null);
 					}
 					break;
-				/* 				case "/tarot1":
+				case "/tarot1":
 				case "/tarot3":
-				case "/tarot10":
+				case "/tarot10": {
 					const cardsToDraw = Number(msg.text.split("tarot")[1]) || 3;
-					const { reading, slideshowPath } = await getReading(cardsToDraw);
-					await bot.sendVideo(
-						chatId,
-						slideshowPath,
-						{ reply_to_message_id: msg.message_id, parse_mode: "HTML", caption: `<blockquote expandable>${reading.join("\n")}</blockquote>` },
-						{ filename: "tarot_reading.mp4", contentType: "video/mp4" },
-					);
-					fs.unlinkSync(slideshowPath);
+					const userQuestion = msg.text.split(" ").splice(1).join(" ");
+					const { reading } = await getReading(cardsToDraw);
 
-					break; */
+					const llmRequest = `
+				Generate a tarot reading for ${[msg.from.first_name, msg.from.last_name].join(" ").trim()} (@${msg.from.username}) based on these cards: ${reading.join(",")}.
+				${userQuestion.trim().length > 0 ? `The reading should address this specific question: "${userQuestion}"` : ""}
+				
+				Format the response as a conversation between Dasha Nekrasova and Anna Khachiyan from the Red Scare podcast. Include their typical banter, cultural references, and sardonic tone. They should directly address ${msg.from.username ? `@${msg.from.username}` : "the querent"} during the reading.
+				
+				If there's a natural opportunity for a clever wordplay or joke related to the querent's name that fits the reading's context, include it, but don't force it.
+				
+				The reading should:
+				- Interpret each card's meaning in relation to the others
+				- Maintain the nihilistic yet insightful tone of the podcast
+				- Include references to psychoanalysis, cultural theory, or art when relevant
+				- End with some form of conclusion about the querent's situation
+				- NOT say that something is very [insert thinkers name] in the tarot cards
+				- The response has to be in HTML and only use these tags: b, strong, i, em, u, ins, s, strike, del, tg-spoiler, a, code, pre, blockquote
+
+				`;
+
+					const tarotMessage = await bot.sendMessage(msg.chat.id, reading.join("\n") + `\n<blockquote expandable>One sec...</blockquote>`, {
+						parse_mode: "HTML",
+					});
+
+					const interpretation = await sendSimpleRequestToClaude(llmRequest);
+					await bot.editMessageText(reading.join("\n") + `\n<blockquote expandable>${sanitizeTags(interpretation.content[0].text)}</blockquote>`, {
+						parse_mode: "HTML",
+						message_id: tarotMessage.message_id,
+						chat_id: msg.chat.id,
+					});
+					break;
+				}
 				case "/musicstats":
 					const stats = await getMusicStats(musicCollection, msg.chat.id);
 					await bot.sendMessage(msg.chat.id, `<blockquote expandable>${stats}</blockquote>`, {
@@ -1568,6 +1593,22 @@ Here are the commands you can use:
 						console.error(e);
 					});
 					break;
+				case "/torah":
+					const books = ["Genesis", "Exodus", "Leviticus", "Numbers", "Deuteronomy"];
+					const randomBook = books[Math.floor(Math.random() * books.length)];
+					const torahDB = client.db("bible");
+					const torahVerse = await torahDB
+						.collection("verses")
+						.aggregate([{ $match: { translation: "KJV", book: randomBook } }, { $sample: { size: 1 } }])
+						.toArray();
+
+					const t = torahVerse[0];
+
+					const torahText = `${t.book} ${t.chapter}:${t.verse}\n${t.text}`;
+					handleResponse(`<blockquote expandable>${torahText}</blockquote>`, msg, chatId, myCache, bot, null).catch((e) => {
+						console.error(e);
+					});
+					break;
 				case "/bible":
 					const bibleDB = client.db("bible");
 					const verse = await bibleDB
@@ -1582,12 +1623,19 @@ Here are the commands you can use:
 						console.error(e);
 					});
 					break;
-				case "/tarot1":
-				case "/tarot3":
-				case "/tarot10":
-					if (msg.chat.type !== "private") return;
-					const cardsToDraw = Number(msg.text.split("tarot")[1]) || 3;
-					const userQuestion = msg.text.split(" ").splice(1).join(" ");
+				case "/oracle":
+					let target = text.split(" ").slice(1).join(" ");
+
+					explainContext(db.collection("books"), `${target?.length > 0 ? target : "@" + msg.from.username}`)
+						.then((context) => {
+							handleResponse(`<blockquote expandable>${context}</blockquote>`, msg, chatId, myCache, bot, null).catch((err) => {
+								console.error(err);
+							});
+						})
+						.catch((err) => {
+							console.error(err);
+						});
+
 					const { slideshowPath, reading, imagePaths } = await getReading(cardsToDraw);
 					const fileOptions = {
 						filename: "video.mp4",

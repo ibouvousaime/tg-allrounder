@@ -43,8 +43,14 @@ function getContext(collection, book, line) {
 			});
 	});
 }
+function sanitizeTags(input) {
+	const allowedTags = ["b", "strong", "i", "em", "u", "ins", "s", "strike", "del", "tg-spoiler", "a", "tg-emoji", "tg-time", "code", "pre", "blockquote"];
 
-async function explainContextClaude(collection, destination) {
+	const regex = new RegExp(`<(?!\\/?(${allowedTags.join("|")})(?:\\s|>))\\/?[\\w\\s="-]+.*?>`, "gi");
+
+	return input.replace(regex, "");
+}
+async function explainContext(collection, destination) {
 	return new Promise(async (resolve, reject) => {
 		let randomOracleMessage = getRandomOracleMessageObj();
 		let context = await getContext(collection, randomOracleMessage.book, randomOracleMessage.line);
@@ -56,11 +62,12 @@ async function explainContextClaude(collection, destination) {
 		const book = randomOracleMessage.book;
 		const prompt = `Imagine you rolled a 3-sided die and received this oracle line: "${line}" from the book "${book}". Here's the context from the book: "${context}". 
 Now, explain to ${destination} what this oracle line means for their life.
-
+		The response has to be in HTML and only use these tags: b, strong, i, em, u, ins, s, strike, del, tg-spoiler, a, code, pre, blockquote
 `;
 		sendSimpleRequestToDeepSeek(prompt)
 			.then((response) => {
-				resolve(response);
+				console.log(response);
+				resolve(sanitizeTags(response));
 			})
 			.catch((err) => {
 				reject(err);
@@ -89,4 +96,4 @@ function findLastPunctuationIndex(str, beforeIndex) {
 	return (lastIndex = -1 ? 0 : lastIndex);
 }
 
-module.exports = { getRandomOracleMessageObj, getContext, explainContextClaude };
+module.exports = { getRandomOracleMessageObj, getContext, explainContext, sanitizeTags };
