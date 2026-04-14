@@ -20,6 +20,8 @@ const math = require("mathjs");
 const { getWordEtymology, lookupWord } = require("./utils/dictionary");
 const { sleepQuotes } = require("./utils/sleepQuotes");
 const moment = require("moment");
+const { DateTime } = require("luxon");
+const { find } = require("geo-tz");
 
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, {
 	baseApiUrl: process.env.LOCAL_TELEGRAM_API_URL || "http://localhost:8081",
@@ -139,7 +141,7 @@ const { findAuslanSignVideoLink } = require("./utils/auslan");
 const { renderLatexToPngBuffer } = require("./utils/latex");
 const { analyzeSentiment, analyzePhoto, emotionToEmoji, allowedReactionEmojis } = require("./utils/transformers");
 const { handleTimeReminders } = require("./utils/reminder");
-const { getCoordinates, getAstrologyChart, generateSynastryChart, getSolarReturnChart } = require("./utils/astrology");
+const { getCoordinates, getAstrologyChart, generateSynastryChart, getSolarReturnChart, getAstroloseekChart } = require("./utils/astrology");
 const { sub } = require("@tensorflow/tfjs-node");
 
 axios
@@ -254,6 +256,14 @@ axios
 				description: "Get synastry chart between you and another user based on registered birth data",
 			},
 			{ command: "solarreturn", description: "Get solar return chart" },
+			{
+				command: "natalifbornnow",
+				description: "Get natal chart for people born rn",
+			},
+			{
+				command: "natalifconceivechildnow",
+				description: "Get natal chart for child born 40 weeks from now",
+			},
 		],
 	})
 	.then(() => {})
@@ -1849,6 +1859,95 @@ Here are the commands you can use:
 						{ filename: "synastry_chart.png", contentType: "image/png" },
 					);
 					break;
+				case "/natalifconceivechildnow": {
+					const locationInput = text.split(" ").slice(1).join(" ").trim();
+					if (!locationInput) {
+						handleResponse("Usage: /natalifconceivechildnow [location] (e.g., /natalifconceivechildnow New York)", msg, chatId, myCache, bot, null).catch(
+							(err) => {
+								console.error(err);
+							},
+						);
+						break;
+					}
+
+					try {
+						const coordinates = await getCoordinates(locationInput);
+						const timezone = find(coordinates.lat, coordinates.lng)[0];
+						if (!timezone) {
+							throw new Error("Could not determine timezone for location");
+						}
+						const now = DateTime.now().setZone(timezone);
+						if (!now.isValid) {
+							throw new Error(`Invalid datetime: ${now.invalidExplanation}`);
+						}
+						const futureDate = now.plus({ weeks: 40 });
+						const dataInfo = {
+							name: "Future child (born 40 weeks from now)",
+							year: futureDate.year,
+							month: futureDate.month,
+							day: futureDate.day,
+							hour: futureDate.hour,
+							minute: futureDate.minute,
+							lat: coordinates.lat,
+							lng: coordinates.lng,
+							location: {
+								city: locationInput.split(",")[0].trim(),
+								country: null,
+							},
+						};
+						const { buffer: chart, url } = await getAstroloseekChart(dataInfo);
+						await bot.sendPhoto(chatId, chart, {
+							reply_to_message_id: msg.message_id,
+							caption: `<a href="${url}">Astroseek link</a>`,
+							parse_mode: "HTML",
+						});
+					} catch (error) {
+						console.error("Error generating natal chart for future child:", error);
+					}
+					break;
+				}
+				case "/natalifbornnow": {
+					const locationInput = text.split(" ").slice(1).join(" ").trim();
+					if (!locationInput) {
+						handleResponse("Usage: /natalifbornnow [location] (e.g., /natalifbornnow New York)", msg, chatId, myCache, bot, null).catch((err) => {
+							console.error(err);
+						});
+						break;
+					}
+
+					try {
+						const coordinates = await getCoordinates(locationInput);
+						const timezone = find(coordinates.lat, coordinates.lng)[0];
+						if (!timezone) {
+							throw new Error("Could not determine timezone for location");
+						}
+						const now = DateTime.now().setZone(timezone);
+						if (!now.isValid) {
+							throw new Error(`Invalid datetime: ${now.invalidExplanation}`);
+						}
+						const dataInfo = {
+							name: "Someone (now)",
+							year: now.year,
+							month: now.month,
+							day: now.day,
+							hour: now.hour,
+							minute: now.minute,
+							lat: coordinates.lat,
+							lng: coordinates.lng,
+							location: {
+								city: locationInput.split(",")[0].trim(),
+								country: null,
+							},
+						};
+						const chart = await getAstrologyChart(dataInfo, null);
+						await bot.sendPhoto(chatId, chart, {
+							reply_to_message_id: msg.message_id,
+						});
+					} catch (error) {
+						console.error("Error generating natal chart for now:", error);
+					}
+					break;
+				}
 				case "/natalfor": {
 					let birthDataInfoRawText = text.split(" ").slice(1).join(" ");
 					const parsedDataInfo = await sendSimpleRequestToDeepSeek(
@@ -1864,14 +1963,16 @@ Here are the commands you can use:
 					}
 
 					const normalizedBirthDataInfo = JSON.parse(parsedDataInfo.substring(firstBraceIndexNatal, lastBraceIndexNatal + 1));
-					const coordinatesInfo = await getCoordinates([normalizedBirthDataInfo.location.city, normalizedBirthDataInfo.location.country].join(", "));
+					const coordinatesInfo = await getCoordinates(normalizedBirthDataInfo.location.city);
 					const completeBirthDataInfo = {
 						...normalizedBirthDataInfo,
 						...coordinatesInfo,
 					};
-					const chart = await getAstrologyChart(completeBirthDataInfo, null);
+					const { buffer: chart, url } = await getAstroloseekChart(completeBirthDataInfo);
 					await bot.sendPhoto(chatId, chart, {
 						reply_to_message_id: msg.message_id,
+						caption: `<a href="${url}">Astroseek link</a>`,
+						parse_mode: "HTML",
 					});
 					break;
 				}
@@ -1902,9 +2003,11 @@ Here are the commands you can use:
 						location: birthData.location,
 					};
 
-					const chart = await getAstrologyChart(dataInfo, languageCode);
+					const { buffer: chart, url } = await getAstroloseekChart(dataInfo, languageCode);
 					await bot.sendPhoto(chatId, chart, {
 						reply_to_message_id: msg.message_id,
+						caption: `<a href="${url}">Astroseek link</a>`,
+						parse_mode: "HTML",
 					});
 
 					break;

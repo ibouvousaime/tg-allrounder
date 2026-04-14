@@ -12,6 +12,58 @@ const fs = require("node:fs");
 const allowedLanguages = ["EN", "FR", "PT", "ES", "TR", "RU", "IT", "CN", "DE", "HI"];
 
 const prettier = require("prettier");
+const { getAstroSeekChart } = require("./astroseektest");
+async function getAstroloseekChart(dateInfo, language = "EN") {
+	const locationInfo = dateInfo.location || {};
+
+	const timezone = find(dateInfo.lat, dateInfo.lng)[0];
+	if (!timezone) {
+		throw new Error("Could not determine timezone from coordinates");
+	}
+
+	const subject = {
+		name: dateInfo.name,
+		city: locationInfo.city || "",
+		year: Number(dateInfo.year),
+		month: Number(dateInfo.month),
+		day: Number(dateInfo.day),
+		hour: Number(dateInfo.hour),
+		minute: Number(dateInfo.minute),
+		longitude: dateInfo.lng,
+		latitude: dateInfo.lat,
+		timezone: timezone,
+		houses_system_identifier: "W",
+	};
+	console.log(subject);
+	const countryCode = locationInfo.country ? getCountryCode(locationInfo.country) : null;
+	if (countryCode) {
+		subject.nation = countryCode;
+	}
+
+	const payload = {
+		subject,
+		theme: "strawberry",
+		style: "modern",
+		show_zodiac_background_ring: true,
+		language: allowedLanguages.includes(language) ? language : "EN",
+	};
+	let response;
+	try {
+		const image = await getAstroSeekChart(subject);
+		/* response = await axios.post(`${apiUrl}/api/v5/chart/birth-chart`, payload, {
+			headers: {
+				"X-RapidAPI-Key": apiKey,
+				"Content-Type": "application/json",
+			},
+		}); */
+		return image;
+	} catch (error) {
+		console.error("Error fetching astrology chart:", error.response ? error.response.data : error.message);
+		throw error;
+	}
+
+	/* return await convertSVGToPNG(svgData); */
+}
 async function getAstrologyChart(dateInfo, language = "EN") {
 	const locationInfo = dateInfo.location || {};
 	const apiKey = process.env.ASTRO_API_KEY;
@@ -242,8 +294,9 @@ async function getCoordinates(location) {
 		if (!res || res.length === 0) {
 			throw new Error(`No results found for "${location}"`);
 		}
-
 		const { latitude, longitude } = res[0];
+		console.log({ latitude, longitude, location });
+
 		return { lat: latitude, lng: longitude };
 	} catch (error) {
 		console.error("Geocoding error:", error.message);
@@ -261,4 +314,5 @@ module.exports = {
 	getCoordinates,
 	generateSynastryChart,
 	getSolarReturnChart,
+	getAstroloseekChart,
 };
