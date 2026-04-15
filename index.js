@@ -1515,6 +1515,7 @@ Here are the commands you can use:
 				case "/tarot1":
 				case "/tarot3":
 				case "/tarot10": {
+					if (msg.chat.type !== "private") return;
 					const cardsToDraw = Number(msg.text.split("tarot")[1]) || 3;
 					const userQuestion = msg.text.split(" ").splice(1).join(" ");
 					const { reading } = await getReading(cardsToDraw);
@@ -1533,7 +1534,7 @@ Here are the commands you can use:
 				- Include references to psychoanalysis, cultural theory, or art when relevant
 				- End with some form of conclusion about the querent's situation
 				- NOT say that something is very [insert thinkers name] in the tarot cards
-				- The response has to be in HTML and only use these tags: b, strong, i, em, u, ins, s, strike, del, tg-spoiler, a, code, pre, blockquote
+				- The response has to be in HTML and only use these tags: b, strong, i, em, u, ins, s, strike, del, tg-spoiler, a
 
 				`;
 
@@ -1541,12 +1542,18 @@ Here are the commands you can use:
 						parse_mode: "HTML",
 					});
 
-					const interpretation = await sendSimpleRequestToClaude(llmRequest);
-					await bot.editMessageText(reading.join("\n") + `\n<blockquote expandable>${sanitizeTags(interpretation.content[0].text)}</blockquote>`, {
+					const interpretationText = sanitizeTags(await sendSimpleRequestToDeepSeek(llmRequest));
+					const interpretationMessageBlocks = createMessageBlocks(interpretationText);
+					await bot.editMessageText(reading.join("\n") + `\n<blockquote expandable>${interpretationMessageBlocks[0]}</blockquote>`, {
 						parse_mode: "HTML",
 						message_id: tarotMessage.message_id,
 						chat_id: msg.chat.id,
 					});
+					if (interpretationMessageBlocks.length > 1) {
+						for (let i = 1; i < interpretationMessageBlocks.length; i++) {
+							await bot.sendMessage(chatId, `\n<blockquote expandable> ${interpretationMessageBlocks[i]}</blockquote>`, { parse_mode: "HTML" });
+						}
+					}
 					break;
 				}
 				case "/musicstats":
@@ -1677,7 +1684,7 @@ Here are the commands you can use:
 						message_id: tarotMessage.message_id,
 						chat_id: msg.chat.id,
 					});
-					if (interpretationMessageBlocks.length > 2) {
+					if (interpretationMessageBlocks.length > 1) {
 						for (let i = 1; i < interpretationMessageBlocks.length; i++) {
 							await bot.sendMessage(chatId, `\n<blockquote expandable> ${interpretationMessageBlocks[i]}</blockquote>`);
 						}

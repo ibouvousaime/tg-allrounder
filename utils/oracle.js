@@ -44,7 +44,7 @@ function getContext(collection, book, line) {
 	});
 }
 function sanitizeTags(input) {
-	const allowedTags = ["b", "strong", "i", "em", "u", "ins", "s", "strike", "del", "tg-spoiler", "a", "tg-emoji", "tg-time", "code", "pre", "blockquote"];
+	const allowedTags = ["b", "strong", "i", "em", "u", "ins", "s", "strike", "del", "tg-spoiler", "a", "tg-emoji", "tg-time"];
 
 	const regex = new RegExp(`<(?!\\/?(${allowedTags.join("|")})(?:\\s|>))\\/?[\\w\\s="-]+.*?>`, "gi");
 
