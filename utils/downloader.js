@@ -17,6 +17,31 @@ async function loadMusicModule() {
 	return YTMusic;
 }
 
+async function searchYouTubeMusicVideo(query) {
+	const cookiesPath = path.join(os.homedir(), "cookies.txt");
+	try {
+		const cmd = `${os.homedir()}/.local/bin/yt-dlp "ytsearch:${query}" --cookies "${cookiesPath}" --skip-download --dump-json --no-playlist`;
+		const { stdout } = await execPromise(cmd, { maxBuffer: 10 * 1024 * 1024 });
+		const lines = stdout.trim().split("\n");
+		const results = lines
+			.map((line) => {
+				try {
+					return JSON.parse(line);
+				} catch (e) {
+					return null;
+				}
+			})
+			.filter(Boolean);
+		if (results.length > 0 && results[0].id) {
+			return results[0].id;
+		}
+		return null;
+	} catch (error) {
+		console.error("YouTube Music video search failed:", error.message);
+		return null;
+	}
+}
+
 function spawnPromise(command, args) {
 	return new Promise((resolve, reject) => {
 		const child = spawn(command, args, {
@@ -190,31 +215,38 @@ async function getSpotifyMusicLink(link) {
 	try {
 		const { fullLink, type } = findSpotifyTrackLink(link);
 		if (fullLink) {
-			const YTMusic = await loadMusicModule();
-			const ytmusic = new YTMusic();
-			await ytmusic.initialize({
-				cookies: fs.readFileSync(path.join(os.homedir(), "cookies.txt")).toString(),
-			});
-
-			if (type == "track") {
+			if (type === "track") {
 				const songData = await SpottyDL.getTrack(fullLink);
 				console.log("song data", songData);
 				const fullSongName = `${songData.artist} - ${songData.title}`;
-				const result = await ytmusic.searchSongs(fullSongName);
-				return {
-					spotifyConvertedLink: `https://music.youtube.com/watch?v=${result[0].videoId}`,
-					name: fullSongName,
-				};
-			} else if (type == "album") {
+				const videoId = await searchYouTubeMusicVideo(fullSongName);
+				if (videoId) {
+					return {
+						spotifyConvertedLink: `https://music.youtube.com/watch?v=${videoId}`,
+						name: fullSongName,
+					};
+				}
+			} else if (type === "album") {
 				const albumData = await SpottyDL.getAlbum(fullLink);
-				const fullAlbumName = `${albumData.artist} - ${albumData.name}}`;
-				const youtubeAlbums = await ytmusic.searchAlbums(fullAlbumName);
-				return {
-					spotifyConvertedLink: `https://music.youtube.com/playlist?list=${youtubeAlbums[0].playlistId}`,
-					name: fullAlbumName,
-				};
+				const fullAlbumName = `${albumData.artist} - ${albumData.name}`;
+				let videoId = null;
+				if (albumData.tracks && Array.isArray(albumData.tracks) && albumData.tracks.length > 0) {
+					const firstTrack = albumData.tracks[0];
+					const firstTrackName = `${firstTrack.artist || albumData.artist} - ${firstTrack.title}`;
+					videoId = await searchYouTubeMusicVideo(firstTrackName);
+				}
+				if (!videoId) {
+					videoId = await searchYouTubeMusicVideo(fullAlbumName);
+				}
+				if (videoId) {
+					return {
+						spotifyConvertedLink: `https://music.youtube.com/watch?v=${videoId}`,
+						name: fullAlbumName,
+					};
+				}
 			}
-		} else return { spotifyConvertedLink: null, name: null };
+		}
+		return { spotifyConvertedLink: null, name: null };
 	} catch (err) {
 		console.error(err);
 		return { spotifyConvertedLink: null, name: null };
@@ -277,4 +309,5 @@ module.exports = {
 	getAlbumFromSong,
 	downloadVideoFromUrl,
 	extractAudioFromVideo,
+	searchYouTubeMusicVideo,
 };
