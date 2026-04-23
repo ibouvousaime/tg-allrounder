@@ -50,13 +50,16 @@ async function getAstroloseekChart(dateInfo, language = "EN") {
 	let response;
 	try {
 		const image = await getAstroSeekChart(subject);
-		/* response = await axios.post(`${apiUrl}/api/v5/chart/birth-chart`, payload, {
-			headers: {
-				"X-RapidAPI-Key": apiKey,
-				"Content-Type": "application/json",
-			},
-		}); */
-		return image;
+		if (image.buffer) {
+			return image;
+		} else {
+			response = await axios.post(`${apiUrl}/api/v5/chart/birth-chart`, payload, {
+				headers: {
+					"X-RapidAPI-Key": apiKey,
+					"Content-Type": "application/json",
+				},
+			});
+		}
 	} catch (error) {
 		console.error("Error fetching astrology chart:", error.response ? error.response.data : error.message);
 		throw error;
@@ -117,7 +120,7 @@ async function getAstrologyChart(dateInfo, language = "EN") {
 		throw new Error("No SVG chart returned from API");
 	}
 
-	return await convertSVGToPNG(svgData);
+	return { buffer: await convertSVGToPNG(svgData) };
 }
 
 async function generateSynastryChart(subject1, subject2, language = "EN") {

@@ -1,5 +1,6 @@
-import axios from "axios";
-import puppeteer from "puppeteer";
+const puppeteer = require("puppeteer-extra");
+const StealthPlugin = require("puppeteer-extra-plugin-stealth");
+puppeteer.use(StealthPlugin());
 
 function decimalToDegMin(value) {
 	const abs = Math.abs(value);
@@ -54,82 +55,84 @@ function buildAstroSeekUrl(subject) {
 
 	return `https://horoscopes.astro-seek.com/calculate-birth-chart-horoscope-online/?${params.toString()}`;
 }
-
-export async function getAstroSeekChart(subject) {
+async function getAstroSeekChart(subject) {
 	const url = buildAstroSeekUrl(subject);
 
 	const browser = await puppeteer.launch({
 		headless: "new",
-		args: ["--no-sandbox", "--disable-setuid-sandbox"],
+		args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-blink-features=AutomationControlled"],
 	});
 
+	let page;
 	try {
-		const page = await browser.newPage();
+		page = await browser.newPage();
+		await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+		await page.setViewport({ width: 1280, height: 800, deviceScaleFactor: 2 });
 
 		await page.goto(url, {
 			waitUntil: "networkidle2",
 			timeout: 60000,
 		});
 
-		await page.waitForSelector("img", { timeout: 15000 });
+		try {
+			await page.waitForSelector("#tabs_content_container", { timeout: 10000 });
+		} catch (err) {
+			await page.waitForSelector("button, input", { timeout: 10000 });
 
-		await new Promise((res) => setTimeout(res, 2000));
+			await page.evaluate(() => {
+				const buttons = Array.from(document.querySelectorAll("button, input"));
+				const agreeBtn = buttons.find((el) => el.innerText?.toLowerCase().includes("agree") || el.value?.toLowerCase().includes("agree"));
+				if (agreeBtn) agreeBtn.click();
+			});
+			await new Promise((res) => setTimeout(res, 1500));
 
-		/* 		const images = await page.$$("img");
-
-		let chartElement = null;
-
-		for (const img of images) {
-			const src = await img.evaluate((el) => el.src);
-			if (src && src.includes("chart")) {
-				chartElement = img;
-				break;
-			}
+			await page.waitForSelector("#tabs_content_container", { timeout: 15000 });
 		}
 
-		if (!chartElement && images.length > 0) {
-			chartElement = images[0];
-		}
-
-		if (!chartElement) {
-			throw new Error("Chart element not found");
-		}
- */
-
-		await page.waitForSelector("button, input", { timeout: 10000 });
-
-		// try to click the "AGREE" button
-		await page.evaluate(() => {
-			const buttons = Array.from(document.querySelectorAll("button, input"));
-
-			const agreeBtn = buttons.find((el) => el.innerText?.toLowerCase().includes("agree") || el.value?.toLowerCase().includes("agree"));
-
-			if (agreeBtn) agreeBtn.click();
-		});
-		await new Promise((res) => setTimeout(res, 1500));
-
-		await page.waitForSelector("#tabs_content_container", {
-			timeout: 15000,
-		});
-
-		const src = await page.evaluate(() => {
+		const imageData = await page.evaluate(() => {
 			const imgs = Array.from(document.querySelectorAll("#tabs_content_container img"));
 
 			const biggest = imgs.sort((a, b) => {
 				return b.naturalWidth * b.naturalHeight - a.naturalWidth * a.naturalHeight;
 			})[0];
 
-			return biggest?.src;
+			if (!biggest) return null;
+
+			const canvas = document.createElement("canvas");
+			canvas.width = biggest.naturalWidth;
+			canvas.height = biggest.naturalHeight;
+			const ctx = canvas.getContext("2d");
+			ctx.drawImage(biggest, 0, 0);
+
+			return canvas.toDataURL("image/png");
 		});
 
-		const response = await axios.get(src, {
-			responseType: "arraybuffer",
-		});
+		if (!imageData) {
+			throw new Error("Could not find chart image");
+		}
 
-		const buffer = Buffer.from(response.data);
+		const base64Data = imageData.replace(/^data:image\/\w+;base64,/, "");
+		const buffer = Buffer.from(base64Data, "base64");
 
 		return { buffer, url };
+	} catch (err) {
+		console.error(`AstroSeek chart error: ${err.message}`);
+		if (page) {
+			try {
+				const screenshot = await page.screenshot({ encoding: "base64" });
+				console.error(`Page screenshot (base64): ${screenshot.substring(0, 100)}...`);
+				const html = await page.content();
+				console.error(`Page title: ${await page.title()}`);
+				const errorText = await page.evaluate(() => document.body.innerText.substring(0, 500));
+				console.error(`Page content snippet: ${errorText}`);
+			} catch (debugErr) {
+				console.error(`Debug capture failed: ${debugErr.message}`);
+			}
+		}
+		return { buffer: null, url };
 	} finally {
 		await browser.close();
 	}
 }
+
+module.exports = { getAstroSeekChart };

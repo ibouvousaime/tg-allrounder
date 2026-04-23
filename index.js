@@ -93,6 +93,7 @@ const collection = db.collection("messages");
 const musicCollection = db.collection("music");
 const tarotCollection = db.collection("tarot");
 const reactionsCollection = db.collection("reactions");
+const dadJokesCollection = db.collection("dadJokes");
 const dictionaryCollection = client.db("wiktionary").collection("words");
 
 const { Convert } = require("easy-currencies");
@@ -224,7 +225,8 @@ axios
 				command: "summary",
 				description: "Summarize last N messages (default: 100)",
 			},
-			{ command: "alquran", description: "Get a random Quran verse" },
+			/* 			{ command: "dad", description: "Get a random dad joke" },
+			 */ { command: "alquran", description: "Get a random Quran verse" },
 			{ command: "bible", description: "Get a random Bible verse" },
 			{ command: "torah", description: "Get a random Torah verse" },
 
@@ -380,7 +382,7 @@ async function translateTweet(tweetData) {
 	return tweetData;
 }
 
-async function handleTweetPreview(msg, text, chatId) {
+async function handleTweetPreview(msg, text, chattriId) {
 	const tweetId = extractTweetId(text);
 	if (!tweetId || text.includes("no preview")) {
 		return;
@@ -860,6 +862,18 @@ Here are the commands you can use:
 						});
 
 					break;
+				/* 				case "/dad":
+					try {
+						const jokes = await dadJokesCollection.aggregate([{ $sample: { size: 1 } }]).toArray();
+						if (jokes.length > 0) {
+							handleResponse(jokes[0].joke, msg, chatId, myCache, bot, null).catch((err) => {
+								console.error(err);
+							});
+						}
+					} catch (error) {
+						console.error("Failed to fetch dad joke:", error);
+					}
+					break; */
 				case "/8ball":
 					const response = getRandomElement(eightBallResponses);
 					handleResponse(response, msg, chatId, myCache, bot, null).catch((err) => {
@@ -1994,9 +2008,11 @@ Here are the commands you can use:
 								country: null,
 							},
 						};
-						const chart = await getAstrologyChart(dataInfo, null);
+						const { buffer: chart, url } = await getAstroloseekChart(dataInfo, null);
 						await bot.sendPhoto(chatId, chart, {
 							reply_to_message_id: msg.message_id,
+							caption: `<a href="${url}">Astroseek link</a>`,
+							parse_mode: "HTML",
 						});
 					} catch (error) {
 						console.error("Error generating natal chart for now:", error);
@@ -2059,12 +2075,15 @@ Here are the commands you can use:
 					};
 
 					const { buffer: chart, url } = await getAstroloseekChart(dataInfo, languageCode);
-					await bot.sendPhoto(chatId, chart, {
-						reply_to_message_id: msg.message_id,
-						caption: `<a href="${url}">Astroseek link</a>`,
-						parse_mode: "HTML",
-					});
-
+					if (chart) {
+						await bot.sendPhoto(chatId, chart, {
+							reply_to_message_id: msg.message_id,
+							caption: `<a href="${url}">Astroseek link</a>`,
+							parse_mode: "HTML",
+						});
+					} else {
+						await bot.sendMessage(chatId, `<a href=${url}>Astroseek Link</a>`, { reply_to_message_id: msg.message_id, parse_mode: "HTML" });
+					}
 					break;
 				case "/solarreturn":
 					let solarUsername = msg.reply_to_message?.from?.username || "";

@@ -13,13 +13,13 @@ const reminders = [
 		weekendsOnly: true,
 		getMessage: () => sleepQuotes.random(),
 	},
-	{
+	/* {
 		key: "class",
 		startHour: 8,
 		endHour: 9,
 		weekendsOnly: false,
 		getMessage: () => goingToClassQuotes.random(),
-	},
+	}, */
 ];
 
 async function handleTimeReminders(msg, antCollection, bot) {
