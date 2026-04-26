@@ -383,6 +383,8 @@ async function translateTweet(tweetData) {
 }
 
 async function handleTweetPreview(msg, text, chattriId) {
+	const chatId = msg.chat.id;
+
 	const tweetId = extractTweetId(text);
 	if (!tweetId || text.includes("no preview")) {
 		return;
@@ -420,7 +422,7 @@ async function handleTweetPreview(msg, text, chattriId) {
 
 			const tweetTextParts = createMessageBlocks(tweetText, 2000).map((text) => `<blockquote expandable>${text}</blockquote>`);
 			tweetText = tweetTextParts[0];
-			if (mediaCount === 0) {
+			/* if (mediaCount === 0) {
 				//await bot.sendMessage(chatId, tweetText, messageOptions);
 			} else if (mediaCount === 1) {
 				const singleMedia = media[0];
@@ -431,7 +433,7 @@ async function handleTweetPreview(msg, text, chattriId) {
 				} else {
 					await bot.sendPhoto(chatId, singleMedia.url, optionsWithCaption);
 				}
-			} else if (mediaCount > 1 && mediaCount <= 10) {
+			} else */ if (mediaCount > 0 && mediaCount <= 10) {
 				const mediaGroup = media.map((item, index) => ({
 					type: item.type.toLowerCase(),
 					media: item.url,
@@ -441,12 +443,12 @@ async function handleTweetPreview(msg, text, chattriId) {
 			} else {
 				for (const item of media) {
 					if (item.type === "VIDEO" || item.type == "GIF") {
-						await bot.sendVideo(chatId, item.url);
+						await bot.sendVideo(chatId, item.url, optionsWithCaption);
 					} else if (item.type === "PHOTO") {
-						await bot.sendPhoto(chatId, item.url);
+						await bot.sendPhoto(chatId, item.url, optionsWithCaption);
 					}
 				}
-				await bot.sendMessage(chatId, tweetText, messageOptions);
+				//await bot.sendMessage(chatId, tweetText, messageOptions);
 			}
 			//	if (tweetTextParts.length > 1) {
 			for (let i = 0; i < tweetTextParts.length; i++) {
