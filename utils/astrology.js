@@ -234,6 +234,59 @@ async function convertSVGToPNG(svgData, options = { width: 2048, height: 2048 },
 	}
 }
 
+async function generateCompositeChart(subject1, subject2, language = "EN") {
+	const apiKey = process.env.ASTRO_API_KEY;
+	const apiUrl = process.env.ASTROLOGER_API_URL || "http://localhost:8000";
+
+	formatSubject = (subject) => {
+		const timezone = find(subject.lat, subject.lng)[0];
+		if (!timezone) {
+			throw new Error("Could not determine timezone from coordinates");
+		}
+		const output = {
+			name: subject.name,
+			city: subject.location.city || "",
+			year: subject.year,
+			month: subject.month,
+			day: subject.day,
+			hour: subject.hour,
+			minute: subject.minute,
+			longitude: subject.lng,
+			latitude: subject.lat,
+			timezone: timezone,
+			houses_system_identifier: "W",
+		};
+		const countryCode = subject.location?.country ? getCountryCode(subject.location.country) : null;
+		if (countryCode) {
+			output.nation = countryCode;
+		}
+		return output;
+	};
+	const payload = {
+		first_subject: formatSubject(subject1),
+		second_subject: formatSubject(subject2),
+		theme: "strawberry",
+		style: "modern",
+
+		show_zodiac_background_ring: true,
+		language: allowedLanguages.includes(language) ? language : "EN",
+	};
+
+	const response = await axios.post(`${apiUrl}/api/v5/chart/composite`, payload, {
+		headers: {
+			"X-RapidAPI-Key": apiKey,
+			"Content-Type": "application/json",
+		},
+	});
+
+	const svgData = response.data.chart;
+	if (!svgData) {
+		throw new Error("No SVG chart returned from API");
+	}
+
+	return await convertSVGToPNG(svgData, { width: 2048, height: 768 });
+}
+
 async function getSolarReturnChart(dateInfo, year) {
 	const apiKey = process.env.ASTRO_API_KEY;
 	const apiUrl = process.env.ASTROLOGER_API_URL || "http://localhost:8000";
@@ -316,6 +369,7 @@ module.exports = {
 	getAstrologyChart,
 	getCoordinates,
 	generateSynastryChart,
+	generateCompositeChart,
 	getSolarReturnChart,
 	getAstroloseekChart,
 };

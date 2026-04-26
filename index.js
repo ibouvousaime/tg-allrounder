@@ -142,7 +142,14 @@ const { findAuslanSignVideoLink } = require("./utils/auslan");
 const { renderLatexToPngBuffer } = require("./utils/latex");
 const { analyzeSentiment, analyzePhoto, emotionToEmoji, allowedReactionEmojis } = require("./utils/transformers");
 const { handleTimeReminders } = require("./utils/reminder");
-const { getCoordinates, getAstrologyChart, generateSynastryChart, getSolarReturnChart, getAstroloseekChart } = require("./utils/astrology");
+const {
+	getCoordinates,
+	getAstrologyChart,
+	generateSynastryChart,
+	generateCompositeChart,
+	getSolarReturnChart,
+	getAstroloseekChart,
+} = require("./utils/astrology");
 const { sub } = require("@tensorflow/tfjs-node");
 
 axios
@@ -258,6 +265,10 @@ axios
 			{
 				command: "synastry",
 				description: "Get synastry chart between you and another user based on registered birth data",
+			},
+			{
+				command: "composite",
+				description: "Get composite chart between you and another user based on registered birth data",
 			},
 			{ command: "solarreturn", description: "Get solar return chart" },
 			{
@@ -1928,6 +1939,79 @@ Here are the commands you can use:
 							reply_to_message_id: msg.message_id,
 						},
 						{ filename: "synastry_chart.png", contentType: "image/png" },
+					);
+					break;
+				case "/composite":
+					let compositeSubjectsUsernames = msg.text
+						.split(" ")
+						.slice(1)
+						.map((s) => s.replace("@", ""))
+						.filter((s) => s.trim().length > 0);
+					let compositeRepliedToID = msg.reply_to_message?.from?.id;
+					if (compositeSubjectsUsernames.length == 1) {
+						compositeSubjectsUsernames = [compositeSubjectsUsernames[0], msg.reply_to_message?.from?.username || ""].filter((s) => s.trim().length > 0);
+					}
+					if (!compositeSubjectsUsernames || compositeSubjectsUsernames.length < 1) {
+						handleResponse(
+							"Please provide the usernames of two users to calculate their composite chart, reply to a message to include the replied user's birth data, or a combination of both. For example: /composite @user1 @user2 or reply to a user's message with /composite @otherUser.",
+							msg,
+							chatId,
+							myCache,
+							bot,
+							null,
+						).catch((err) => {
+							console.error(err);
+						});
+						return;
+					}
+					const getCompositeFormattedData = (birthData) => {
+						const dateInfo = birthData.date ? new Date(birthData.date) : null;
+
+						const dataInfo = {
+							name: birthData.name || "",
+							year: dateInfo.getFullYear(),
+							month: dateInfo.getMonth() + 1,
+							day: dateInfo.getDate(),
+							hour: birthData.time ? parseInt(birthData.time.split(":")[0]) : 0,
+							minute: birthData.time ? parseInt(birthData.time.split(":")[1]) : 0,
+							city: birthData.location?.city || "",
+							lat: birthData.lat,
+							lng: birthData.lng,
+							location: birthData.location,
+						};
+						return dataInfo;
+					};
+					const compositeOtherBirthData = await db.collection("birthData").findOne({ chatId, username: compositeSubjectsUsernames[0] });
+					let compositeUserBirthData;
+					if (compositeSubjectsUsernames[1]) {
+						compositeUserBirthData = await db.collection("birthData").findOne({ chatId, username: compositeSubjectsUsernames[1] });
+					} else {
+						compositeUserBirthData = await db.collection("birthData").findOne({ chatId, userId: compositeRepliedToID });
+					}
+
+					const compositeFormattedOtherBirthData = compositeOtherBirthData ? getCompositeFormattedData(compositeOtherBirthData) : null;
+					const compositeFormattedUserBirthData = compositeUserBirthData ? getCompositeFormattedData(compositeUserBirthData) : null;
+
+					if (!compositeOtherBirthData || !compositeUserBirthData) {
+						const missingUsers = [];
+						if (!compositeOtherBirthData) {
+							missingUsers.push(`@${compositeSubjectsUsernames[0]}`);
+						}
+						if (!compositeUserBirthData) {
+							missingUsers.push(compositeSubjectsUsernames[1] ? `@${compositeSubjectsUsernames[1]}` : "the replied user");
+						}
+						handleResponse(`Birth data not found for ${missingUsers.join(" and ")}.`, msg, chatId, myCache, bot, null).catch((err) => {
+							console.error(err);
+						});
+					}
+					const compositeImage = await generateCompositeChart(compositeFormattedUserBirthData, compositeFormattedOtherBirthData);
+					await bot.sendDocument(
+						chatId,
+						compositeImage,
+						{
+							reply_to_message_id: msg.message_id,
+						},
+						{ filename: "composite_chart.png", contentType: "image/png" },
 					);
 					break;
 				case "/natalifconceivechildnow": {
