@@ -106,7 +106,13 @@ const { getAndSendRandomQuestion } = require("./utils/trivia");
 const { sendRandomQuizz } = require("./utils/quizz");
 const { getPollResults } = require("./utils/telegram_polls");
 const { getReading } = require("./utils/tarot");
-const { extractAndEchoSocialLink, downloadImageAsBuffer, getAlbumFromSong, downloadVideoFromUrl, extractAudioFromVideo } = require("./utils/downloader");
+const {
+	extractAndDownloadFromSocialLink,
+	downloadImageAsBuffer,
+	getAlbumFromSong,
+	downloadVideoFromUrl,
+	extractAudioFromVideo,
+} = require("./utils/downloader");
 const { findDirectArchiveLink } = require("./utils/web");
 const { textToSpeech, createConversationAudio } = require("./utils/tts");
 const { makeid, createMessageBlocks } = require("./utils/util");
@@ -140,6 +146,7 @@ const { getWiktionaryPages } = require("./utils/wikitionary");
 const { sanitizeTelegramHtml } = require("./utils/html-sanitizer");
 const { findAuslanSignVideoLink } = require("./utils/auslan");
 const { renderLatexToPngBuffer } = require("./utils/latex");
+const { generateBarChartSvg, renderSvgToPng, DAY_NAMES } = require("./utils/charts");
 const { analyzeSentiment, analyzePhoto, emotionToEmoji, allowedReactionEmojis } = require("./utils/transformers");
 const { handleTimeReminders } = require("./utils/reminder");
 const {
@@ -279,6 +286,10 @@ axios
 				command: "natalifconceivechildnow",
 				description: "Get natal chart for child born 40 weeks from now",
 			},
+			{
+				command: "activity",
+				description: "Show chat activity graphs (hourly & daily)",
+			},
 		],
 	})
 	.then(() => {})
@@ -357,7 +368,7 @@ function isUserAllowedToDM(userId) {
 const videoExtensions = [".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm", ".mkv"];
 
 async function handleSocialMediaLinks(text, chatId, messageId, msg) {
-	extractAndEchoSocialLink(text, (output) => {
+	extractAndDownloadFromSocialLink(text, (output) => {
 		if (Array.isArray(output)) {
 			output.forEach((media) => {
 				fs.readFile(media, async (err, data) => {
@@ -803,6 +814,7 @@ Here are the commands you can use:
 /archive - Get archive.org link for URL
 /summarize - Summarize article from URL
 /reactionstats - Show reaction leaderboard for this chat
+/activity - Show chat activity graphs (hourly & daily)
 
 <b>Tarot Readings:</b>
 /tarot1 - Single card reading
@@ -1196,6 +1208,55 @@ Here are the commands you can use:
 						console.error("Error fetching reaction stats:", error);
 					}
 					break;
+				case "/activity": {
+					try {
+						const oldest = await collection.find({ chatId }).sort({ date: 1 }).limit(1).project({ date: 1 }).toArray();
+
+						const hourlyData = await collection
+							.aggregate([{ $match: { chatId } }, { $group: { _id: { $hour: "$date" }, count: { $sum: 1 } } }, { $sort: { _id: 1 } }])
+							.toArray();
+
+						const hourlyMap = Object.fromEntries(hourlyData.map((d) => [d._id, d.count]));
+						const hourlySeries = Array.from({ length: 24 }, (_, i) => ({
+							label: i.toString().padStart(2, "0"),
+							value: hourlyMap[i] || 0,
+						}));
+
+						const dailyData = await collection
+							.aggregate([{ $match: { chatId } }, { $group: { _id: { $dayOfWeek: "$date" }, count: { $sum: 1 } } }, { $sort: { _id: 1 } }])
+							.toArray();
+
+						const dailyMap = Object.fromEntries(dailyData.map((d) => [d._id, d.count]));
+						const dailySeries = DAY_NAMES.map((name, i) => ({
+							label: name,
+							value: dailyMap[i + 1] || 0,
+						}));
+
+						const timeframe = oldest.length > 0 ? `Since ${oldest[0].date.toLocaleDateString()}` : "";
+
+						const svgHourly = generateBarChartSvg(hourlySeries, {
+							title: `Avg Messages per Hour  ${timeframe}`,
+							barColor: "#89b4fa",
+						});
+						const svgDaily = generateBarChartSvg(dailySeries, {
+							title: `Avg Messages per Day  ${timeframe}`,
+							barColor: "#a6e3a1",
+						});
+
+						const [hourlyPng, dailyPng] = await Promise.all([renderSvgToPng(svgHourly), renderSvgToPng(svgDaily)]);
+
+						await bot.sendMediaGroup(chatId, [
+							{ type: "photo", media: hourlyPng },
+							{ type: "photo", media: dailyPng },
+						]);
+					} catch (err) {
+						console.error("Activity command failed:", err);
+						await bot.sendMessage(chatId, "Failed to generate activity charts.", {
+							reply_to_message_id: msg.message_id,
+						});
+					}
+					break;
+				}
 				case "/removebg":
 				case "/rmbg":
 				case "/deletesticker":

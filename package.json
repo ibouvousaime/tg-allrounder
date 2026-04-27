@@ -44,6 +44,7 @@
     "node-telegram-bot-api": "^0.67.0",
     "openai": "^6.7.0",
     "p-limit": "^7.3.0",
+    "playwright": "^1.59.1",
     "puppeteer": "^22.15.0",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",

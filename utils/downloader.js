@@ -9,6 +9,7 @@ const { makeid } = require("./util");
 const { spawn } = require("node:child_process");
 const path = require("path");
 const crypto = require("crypto");
+const { downloadInstagramContent } = require("./instagram");
 
 async function loadMusicModule() {
 	const musicModule = await import("ytmusic-api");
@@ -68,7 +69,7 @@ function spawnPromise(command, args) {
 	});
 }
 
-async function extractAndEchoSocialLink(text, callback) {
+async function extractAndDownloadFromSocialLink(text, callback) {
 	let audioMode = false;
 	let filename = "video";
 	const { spotifyConvertedLink, name } = await getSpotifyMusicLink(text);
@@ -78,7 +79,7 @@ async function extractAndEchoSocialLink(text, callback) {
 		filename = name;
 	}
 	const socialLinkRegex =
-		/(https?:\/\/(www\.)?((tiktok\.com|vm\.tiktok\.com|music\.youtube\.com|soundcloud\.com|on\.soundcloud\.com)\/|youtube\.com\/shorts\/)[^\s]+)/;
+		/(https?:\/\/(www\.)?((tiktok\.com|vm\.tiktok\.com|music\.youtube\.com|soundcloud\.com|on\.soundcloud\.com|instagram\.com)\/|youtube\.com\/shorts\/)[^\s]+)/;
 
 	const match = text.match(socialLinkRegex);
 	if (!match || !match[0]) {
@@ -99,12 +100,16 @@ async function extractAndEchoSocialLink(text, callback) {
 	].join(" ");
 	const galleryDlCommand = `${os.homedir()}/.local/bin/gallery-dl "${link}" --dest "${destinationFolder}" --cookies ${os.homedir()}/cookies.txt`;
 	try {
-		try {
-			await execPromise(ytDlpCommand);
-		} catch (ytDlpError) {
-			console.error(`yt-dlp failed, trying gallery-dl...`);
-			await execPromise(galleryDlCommand);
-			usedGalleryDL = true;
+		if (link.includes("instagram.com")) {
+			await downloadInstagramContent(link, destinationFolder);
+		} else {
+			try {
+				await execPromise(ytDlpCommand);
+			} catch (ytDlpError) {
+				console.error(`yt-dlp failed, trying gallery-dl...`);
+				await execPromise(galleryDlCommand);
+				usedGalleryDL = true;
+			}
 		}
 
 		//await flattenDirectory(destinationFolder);
@@ -303,7 +308,7 @@ async function extractAudioFromVideo(inputVideoPath, callback) {
 }
 
 module.exports = {
-	extractAndEchoSocialLink,
+	extractAndDownloadFromSocialLink,
 	getSpotifyMusicLink,
 	downloadImageAsBuffer,
 	getAlbumFromSong,
