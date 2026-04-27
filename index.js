@@ -94,6 +94,7 @@ const musicCollection = db.collection("music");
 const tarotCollection = db.collection("tarot");
 const reactionsCollection = db.collection("reactions");
 const dadJokesCollection = db.collection("dadJokes");
+const alertSubscriptions = db.collection("alertSubscriptions");
 const dictionaryCollection = client.db("wiktionary").collection("words");
 
 const { Convert } = require("easy-currencies");
@@ -117,6 +118,10 @@ const { findDirectArchiveLink } = require("./utils/web");
 const { textToSpeech, createConversationAudio } = require("./utils/tts");
 const { makeid, createMessageBlocks } = require("./utils/util");
 const { getMusicStats } = require("./utils/music");
+const escapeHTML = (str) => {
+	if (typeof str !== "string") return str;
+	return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+};
 
 const myCache = new NodeCache();
 loadCache(myCache);
@@ -135,6 +140,7 @@ process.on("SIGINT", gracefulShutdown);
 
 const axios = require("axios");
 const { getWeather, getForecastDay, extractDayOffset, extractLocation } = require("./utils/weather");
+const { getAlerts, formatAlertMessage, getAlertId } = require("./utils/alerts");
 const { getUserMessagesAndAnalyse } = require("./utils/political");
 const { getLocalNews } = require("./utils/news");
 const { withBurnedSubtitles, transcribeAudio } = require("./utils/transcriber");
@@ -290,6 +296,18 @@ axios
 				command: "activity",
 				description: "Show chat activity graphs (hourly & daily)",
 			},
+			{
+				command: "registeralert",
+				description: "Register for weather alerts for a city",
+			},
+			{
+				command: "unregisteralert",
+				description: "Unregister from weather alerts for a city",
+			},
+			{
+				command: "myalerts",
+				description: "List your weather alert subscriptions",
+			},
 		],
 	})
 	.then(() => {})
@@ -343,6 +361,46 @@ setTimeout(() => {
 	console.log("Bot started, waiting for updates...");
 	console.log("Polling URL:", bot.options.baseApiUrl);
 }, 1000);
+
+const ALERT_CHECK_INTERVAL = 2 * 60 * 60 * 1000;
+function sleep(ms) {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+const alertChecker = async () => {
+	try {
+		const subs = await alertSubscriptions.find({}).toArray();
+		const uniqueLocations = [...new Set(subs.map((s) => s.city))];
+		for (const city of uniqueLocations) {
+			await sleep(5000);
+			const { alerts } = await getAlerts(city);
+			const currentAlertIds = new Set(alerts.map((a) => a.id));
+
+			const matchingSubs = subs.filter((s) => s.city === city);
+			for (const sub of matchingSubs) {
+				const previousIds = new Set(sub.lastAlertIds || []);
+				const newAlerts = alerts.filter((a) => !previousIds.has(a.id));
+
+				if (newAlerts.length > 0) {
+					for (const alert of newAlerts) {
+						const msgText = formatAlertMessage(alert, sub.cityDisplay || sub.city);
+						const taggedMsg = `<a href="tg://user?id=${sub.userId}">⛑</a>\n${msgText}`;
+						bot.sendMessage(sub.chatId, taggedMsg, { parse_mode: "HTML" }).catch((err) => {
+							console.error("Failed to send alert notification:", err);
+						});
+					}
+					await alertSubscriptions.updateOne({ _id: sub._id }, { $set: { lastAlertIds: [...currentAlertIds] } });
+				}
+			}
+		}
+	} catch (err) {
+		console.error("Alert checker error:", err);
+	}
+};
+const loop = async () => {
+	await alertChecker();
+	setTimeout(loop, ALERT_CHECK_INTERVAL);
+};
+loop();
 function getAdminsIds(chatId) {
 	return new Promise(async (resolve, reject) => {
 		try {
@@ -798,6 +856,9 @@ Here are the commands you can use:
 <b>Weather & Location:</b>
 /weather [city] - Get weather in Celsius
 /weatherf [city] - Get weather in Fahrenheit
+/registeralert [city] - Get pinged for weather alerts
+/unregisteralert [city] - Stop alerts for a city
+/myalerts - List your alert subscriptions
 
 <b>Translation & Language:</b>
 /trans :[lang] [text] - Translate text (also /cis)
@@ -1065,6 +1126,75 @@ Here are the commands you can use:
 							console.error(err);
 						});
 					break;
+				case "/registeralert":
+					{
+						const city = text.split(" ").slice(1).join(" ").trim();
+						if (!city) {
+							bot.sendMessage(chatId, "Please specify a city. Example: /registeralert Paris", { reply_to_message_id: msg.message_id });
+							break;
+						}
+						const existing = await alertSubscriptions.findOne({ userId: msg.from.id, chatId, city: city.toLowerCase() });
+						if (existing) {
+							bot.sendMessage(chatId, `You're already registered for alerts in ${escapeHTML(city)}.`, {
+								reply_to_message_id: msg.message_id,
+								parse_mode: "HTML",
+							});
+							break;
+						}
+						const { locationName, alerts, error } = await getAlerts(city);
+						if (error) {
+							bot.sendMessage(chatId, `Could not find city`, { reply_to_message_id: msg.message_id });
+							break;
+						}
+						await alertSubscriptions.insertOne({
+							userId: msg.from.id,
+							chatId,
+							city: city.toLowerCase(),
+							cityDisplay: locationName,
+							lastAlertIds: alerts.map((a) => a.id),
+							createdAt: new Date(),
+						});
+						const confirmMsg = `Registered for weather alerts in <b>${escapeHTML(locationName)}</b>.`;
+						bot.sendMessage(chatId, confirmMsg, { reply_to_message_id: msg.message_id, parse_mode: "HTML" });
+					}
+					break;
+
+				case "/unregisteralert":
+					{
+						const city = text.split(" ").slice(1).join(" ").trim().toLowerCase();
+						if (!city) {
+							bot.sendMessage(chatId, "Please specify a city. Example: /unregisteralert Paris", { reply_to_message_id: msg.message_id });
+							break;
+						}
+						const result = await alertSubscriptions.deleteOne({ userId: msg.from.id, chatId, city });
+						if (result.deletedCount > 0) {
+							bot.sendMessage(chatId, `Unregistered from alerts for <b>${escapeHTML(city)}</b>.`, {
+								reply_to_message_id: msg.message_id,
+								parse_mode: "HTML",
+							});
+						} else {
+							bot.sendMessage(chatId, `You are not registered for alerts in <b>${escapeHTML(city)}</b>.`, {
+								reply_to_message_id: msg.message_id,
+								parse_mode: "HTML",
+							});
+						}
+					}
+					break;
+
+				case "/myalerts":
+					{
+						const subs = await alertSubscriptions.find({ userId: msg.from.id, chatId }).toArray();
+						if (subs.length === 0) {
+							bot.sendMessage(chatId, "You have no weather alert subscriptions. Use /registeralert <city> to add one.", {
+								reply_to_message_id: msg.message_id,
+							});
+						} else {
+							const list = subs.map((s, i) => `${i + 1}. <b>${escapeHTML(s.cityDisplay || s.city)}</b>`).join("\n");
+							bot.sendMessage(chatId, `Your weather alert subscriptions:\n${list}`, { reply_to_message_id: msg.message_id, parse_mode: "HTML" });
+						}
+					}
+					break;
+
 				case "/processPoll":
 					bot.sendMessage(msg.chat.id, `I am connected to: ${bot.options.baseApiUrl}`);
 					break;
