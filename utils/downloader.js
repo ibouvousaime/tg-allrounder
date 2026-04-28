@@ -79,7 +79,7 @@ async function extractAndDownloadFromSocialLink(text, callback) {
 		filename = name;
 	}
 	const socialLinkRegex =
-		/(https?:\/\/(www\.)?((tiktok\.com|vm\.tiktok\.com|music\.youtube\.com|soundcloud\.com|on\.soundcloud\.com|instagram\.com)\/|youtube\.com\/shorts\/)[^\s]+)/;
+		/(https?:\/\/(www\.)?((tiktok\.com\/(?!@)[^\s\/]+|vm\.tiktok\.com|music\.youtube\.com|soundcloud\.com|on\.soundcloud\.com|instagram\.com)\/|youtube\.com\/shorts\/)[^\s]+)/;
 
 	const match = text.match(socialLinkRegex);
 	if (!match || !match[0]) {

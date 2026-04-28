@@ -308,6 +308,10 @@ axios
 				command: "myalerts",
 				description: "List your weather alert subscriptions",
 			},
+			{
+				command: "xkcd",
+				description: "Get a random xkcd comic",
+			},
 		],
 	})
 	.then(() => {})
@@ -450,8 +454,6 @@ async function handleSocialMediaLinks(text, chatId, messageId, msg) {
 }
 
 async function translateTweet(tweetData) {
-	console.log("translating...", tweetData.fullText);
-	console.log("Reply", tweetData.replyTo);
 	tweetData.fullText = await translateShell(tweetData.fullText, "en");
 	if (tweetData.replyTo) {
 		tweetData.replyTo = await translateTweet(tweetData.replyTo);
@@ -624,87 +626,6 @@ bot.on("audio", async (msg) => {
 	}
 });
 
-/* bot.on("voice", async (msg) => {
-	try {
-		const chatId = msg.chat.id;
-		const voice = msg.voice;
-		if (!voice) return;
-		const randomChance = Math.random();
-
-		console.log(`Voice message received from ${msg.from.id} in ${chatId}, duration: ${voice.duration}s`);
-
-		if (voice.duration > 300) {
-			console.log(`Long voice message (${voice.duration}s), transcription may take time.`);
-		}
-
-		const file = await bot.getFile(voice.file_id);
-		const localFilePath = file.file_path;
-
-		if (!require("fs").existsSync(localFilePath)) {
-			console.error(`File not found at ${localFilePath}`);
-			return;
-		}
-
-		console.log(`Voice file located at ${localFilePath}`);
-
-		const transcription = await transcribeAudio(localFilePath);
-
-		if (!transcription || transcription.trim().length === 0) {
-			console.log("Transcription empty, skipping sentiment analysis");
-			return;
-		}
-
-		let emoji = null;
-		try {
-			const sentimentResults = await analyzeSentiment(transcription);
-			const result = sentimentResults[0];
-			if (result.score < 0.75) {
-				console.log("voice sentiment too weak", {
-					score: result.score,
-					emotion: result.label,
-				});
-				return;
-			}
-			if (result) {
-				console.log("vm emotion", result);
-				emoji = emotionToEmoji(result.label);
-			}
-		} catch (sentimentError) {
-			console.error("Sentiment analysis failed:", sentimentError);
-		}
-
-		if (emoji && emoji.length > 0 && allowedReactionEmojis.includes(emoji)) {
-			const canReact = (chatId, cooldown = 60 * 60_000) => {
-				const key = `audioReactionCooldown:${chatId}`;
-				if (myCache.get(key)) return false;
-				myCache.set(key, true, cooldown / 1000);
-				return true;
-			};
-			if (canReact(msg.chat.id)) {
-				reactToTelegramMessage(bot, emoji, chatId, msg.message_id);
-			}
-		}
-	} catch (error) {
-		console.error("Voice transcription failed:", error);
-	}
-}); */
-/* bot.on("photo", async (msg) => {
-	const photoMedia = msg.photo.pop();
-
-	if (photoMedia) {
-		bot.getFile(photoMedia.file_id).then((file) => {
-			const fileSizeInBytes = file.file_size;
-			const fileSizeInMB = fileSizeInBytes / (1024 * 1024);
-			console.log(fileSizeInMB, "MB");
-			if (fileSizeInMB < 20) {
-				analyzePhoto(file.file_path).then((analysis) => {
-					console.log(analysis);
-				});
-			}
-		});
-	}
-}); */
-
 const antCollection = db.collection("ants");
 
 bot.on("text", async (msg) => {
@@ -715,107 +636,7 @@ bot.on("text", async (msg) => {
 		return;
 	}
 
-	/* const probability = Math.random();
-	const triggerPattern = process.env.TRIGGER_TERMS || "";
-	const regex = new RegExp(`\\b(${triggerPattern})\\b`, "gi");
-	let count = 0;
-	for (const match of text.matchAll(regex)) {
-		count++;
-	}
-	const threshold = 0.1 * count;
-	if (regex.test(text) && probability < threshold) {
-		const cacheKey = `trigger-voice-${chatId}`;
-		const lastTriggerDate = myCache.get(cacheKey);
-		const now = new Date();
-
-		if (!lastTriggerDate || now - lastTriggerDate > 24 * 60 * 60 * 1000) {
-			bot.sendVoice(chatId, fs.readFileSync("audio/hihi.ogg"), { reply_to_message_id: msg.message_id });
-			myCache.set(cacheKey, now);
-		}
-	} */
-
-	/* 	const redditLink = extractOldRedditLink(msg.text);
-	if (redditLink) {
-		const image = await screenshotRedditPost(redditLink);
-		bot.sendPhoto(msg.chat.id, image);
-	} */
 	handleTimeReminders(msg, antCollection, bot);
-
-	/* if (text.trim().length > 0) {
-		analyzeSentiment(text).then((analysis) => {
-			const canReact = (chatId, cooldown = 60 * 60_000) => {
-				const key = `reactionCooldown:${chatId}`;
-				if (myCache.get(key)) return false;
-
-				myCache.set(key, true, cooldown / 1000);
-				return true;
-			};
-
-			const result = analysis[0];
-			if (msg.chat.title.includes("testing")) result.score = 1;
-			if (result.label == "neutral") return;
-			if (result.score < 0.9) return;
-			const later = (fn, min = 5000, max = 10000) =>
-				setTimeout(
-					() => {
-						fn();
-						console.log("reacted later");
-					},
-					min + Math.random() * (max - min),
-				);
-
-			const chaos = Math.abs(Math.sin(Date.now() % 10000)) * Math.random();
-			const maybe = (p) => Math.random() < p;
-
-			const mood = Math.floor(Date.now() / 60000) % 3;
-			const moodChance = mood === 0 ? 0.2 : mood === 1 ? 0.3 : 0.25;
-
-			if (!maybe(moodChance)) {
-				console.log("Reaction refused", {
-					chat: msg.chat.title,
-					acceptanceChance: moodChance,
-					score: result.score,
-					emotion: result.label,
-					text,
-				});
-				return;
-			}
-			console.log({ chaos, moodChance });
-
-			const react = () => {
-				const emoji = emotionToEmoji(result.label);
-				if (!emoji.length) return;
-				if (!canReact(chatId)) {
-					console.log("cooldown active for chat");
-					return;
-				}
-				reactToTelegramMessage(bot, emoji, chatId, msg.message_id);
-			};
-			/* if (maybe(0.4)) {
-        console.log("double react triggered");
-        if (!canReact(chatId)) {
-          console.log("cooldown active for chat");
-          return;
-        }
-        reactToTelegramMessage(
-          bot,
-          allowedReactionEmojis.random(),
-          chatId,
-          msg.message_id,
-        );
-        later(react);
-        return;
-      } 
-			if (maybe(0.01)) {
-				console.log("later react triggered");
-				setTimeout(react, 120000);
-				return;
-			}
-			console.log("regular react triggered");
-
-			react();
-		});
-	} */
 
 	await handleSocialMediaLinks(text, chatId, msg.message_id, msg);
 
@@ -876,6 +697,7 @@ Here are the commands you can use:
 /summarize - Summarize article from URL
 /reactionstats - Show reaction leaderboard for this chat
 /activity - Show chat activity graphs (hourly & daily)
+/xkcd - Get a random xkcd comic
 
 <b>Tarot Readings:</b>
 /tarot1 - Single card reading
@@ -948,18 +770,6 @@ Here are the commands you can use:
 						});
 
 					break;
-				/* 				case "/dad":
-					try {
-						const jokes = await dadJokesCollection.aggregate([{ $sample: { size: 1 } }]).toArray();
-						if (jokes.length > 0) {
-							handleResponse(jokes[0].joke, msg, chatId, myCache, bot, null).catch((err) => {
-								console.error(err);
-							});
-						}
-					} catch (error) {
-						console.error("Failed to fetch dad joke:", error);
-					}
-					break; */
 				case "/8ball":
 					const response = getRandomElement(eightBallResponses);
 					handleResponse(response, msg, chatId, myCache, bot, null).catch((err) => {
@@ -1195,10 +1005,6 @@ Here are the commands you can use:
 					}
 					break;
 
-				case "/processPoll":
-					bot.sendMessage(msg.chat.id, `I am connected to: ${bot.options.baseApiUrl}`);
-					break;
-
 				case "/invite":
 					const invite = text.split(" ").slice(1).join(" ");
 					sendPoll(db, msg.chat.id, `Invite ${invite} to the chat?`, [{ text: "Yes" }, { text: "No" }], false);
@@ -1208,7 +1014,7 @@ Here are the commands you can use:
 					sendPoll(db, msg.chat.id, `Ban ${victim}?`, [{ text: "Yes" }, { text: "No" }], true);
 					break;
 
-				case "/cis":
+				case "/translate":
 				case "/trans":
 					let textMsg = text.split(" ").slice(1).join(" ");
 					let languageInfo = textMsg.split(" ")[0];
@@ -1381,9 +1187,6 @@ Here are the commands you can use:
 						]);
 					} catch (err) {
 						console.error("Activity command failed:", err);
-						await bot.sendMessage(chatId, "Failed to generate activity charts.", {
-							reply_to_message_id: msg.message_id,
-						});
 					}
 					break;
 				}
@@ -1799,6 +1602,7 @@ Here are the commands you can use:
 				case "/findalbum":
 					if (msg.reply_to_message.audio) {
 						const audio = msg.reply_to_message.audio;
+						console.log(audio);
 						const fullMusicName = `${audio.performer} - ${audio.title}`;
 						const output = await getAlbumFromSong(fullMusicName);
 						await bot.sendMessage(msg.chat.id, `<a href="${output.albumLink}">${output.name}</a>`, { parse_mode: "HTML", reply_to_message_id: msg.messageId });
@@ -1849,6 +1653,8 @@ Here are the commands you can use:
 					});
 					break;
 				case "/oracle":
+					if (msg.chat.type !== "private") return;
+
 					let target = text.split(" ").slice(1).join(" ");
 
 					explainContext(db.collection("books"), `${target?.length > 0 ? target : "@" + msg.from.username}`)
@@ -1906,19 +1712,6 @@ Here are the commands you can use:
 						for (let i = 1; i < interpretationMessageBlocks.length; i++) {
 							await bot.sendMessage(chatId, `\n<blockquote expandable> ${interpretationMessageBlocks[i]}</blockquote>`);
 						}
-					}
-					break;
-				case "/auslan":
-					const auslanText = text.split(" ").slice(1).join(" ") || msg.reply_to_message?.text || "";
-					if (auslanText.trim().length == 0) {
-						handleResponse("usage: /auslan <word>", msg, chatId, myCache, bot, null).catch((err) => {
-							console.error(err);
-						});
-						return;
-					}
-					const mediaUrl = await findAuslanSignVideoLink(auslanText);
-					if (mediaUrl) {
-						bot.sendVideo(chatId, mediaUrl, { reply_to_message_id: msg.message_id }, { filename: "auslan.mp4", contentType: "video/mp4" });
 					}
 					break;
 				case "/latex":
@@ -2420,17 +2213,6 @@ Here are the commands you can use:
 						});
 						break;
 					}
-					/* if (audioUrls && audioUrls.length > 0) {
-						bot
-							.sendMediaGroup(
-								chatId,
-								audioUrls.map((url) => ({ type: "audio", media: url })),
-								{ reply_to_message_id: msg.message_id },
-							)
-							.catch((err) => {
-								console.error(err);
-							});
-					} */
 					if (audioUrls && audioUrls.length > 0) {
 						await bot.sendVoice(chatId, audioUrls[0], {
 							reply_to_message_id: msg.message_id,
@@ -2439,6 +2221,23 @@ Here are the commands you can use:
 					const messageBlocks = createMessageBlocks(word, 4000);
 					for (const block of messageBlocks) {
 						await bot.sendMessage(chatId, `<blockquote expandable>${block}</blockquote>`, { parse_mode: "HTML", reply_to_message_id: msg.message_id });
+					}
+					break;
+
+				case "/xkcd":
+					try {
+						const latestResp = await axios.get("https://xkcd.com/info.0.json");
+						const latestNum = latestResp.data.num;
+						const randomNum = Math.floor(Math.random() * latestNum) + 1;
+						const comicResp = await axios.get(`https://xkcd.com/${randomNum}/info.0.json`);
+						const comic = comicResp.data;
+						await bot.sendPhoto(chatId, comic.img, {
+							caption: `<b>${comic.safe_title}</b>\n${comic.alt}`,
+							parse_mode: "HTML",
+							reply_to_message_id: msg.message_id,
+						});
+					} catch (err) {
+						console.error("xkcd fetch failed:", err);
 					}
 					break;
 			}
